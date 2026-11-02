@@ -9,6 +9,8 @@
 	/**
 	 * @typedef {Object} PersonalInfo
 	 * @property {string} name
+	 * @property {string} headline
+	 * @property {string} location
 	 * @property {string} email
 	 * @property {string} phone
 	 * @property {string} website
@@ -35,24 +37,104 @@
 	 */
 
 	/**
+	 * @typedef {Object} ProjectEntry
+	 * @property {string} id
+	 * @property {string} name
+	 * @property {string} link
+	 * @property {string} bullets
+	 */
+
+	/**
+	 * @typedef {Object} CertificationEntry
+	 * @property {string} id
+	 * @property {string} name
+	 * @property {string} issuer
+	 * @property {string} year
+	 */
+
+	/**
+	 * @typedef {Object} CustomSection
+	 * @property {string} id
+	 * @property {string} title
+	 * @property {string} body
+	 */
+
+	/**
 	 * @typedef {Object} Resume
 	 * @property {PersonalInfo} personal
 	 * @property {ExperienceEntry[]} experience
 	 * @property {EducationEntry[]} education
+	 * @property {ProjectEntry[]} projects
+	 * @property {CertificationEntry[]} certifications
+	 * @property {CustomSection[]} customSections
 	 * @property {string[]} skills
+	 * @property {'line' | 'bullets'} skillStyle
+	 * @property {string[]} sectionOrder
+	 * @property {string[]} hiddenSections
+	 * @property {string} jobDescription
+	 * @property {string} fontFamily
+	 * @property {number} fontSize
 	 */
 
 	/**
 	 * @typedef {'a4' | 'letter'} PaperSize
 	 */
 
+	/**
+	 * @typedef {'line' | 'bullets'} SkillStyle
+	 */
+
 	const STORAGE_KEY = 'resume-builder:v1';
+
+	/** Display order of optional body sections (header/summary always render first when present). */
+	const SECTION_IDS = /** @type {const} */ ([
+		'summary',
+		'experience',
+		'education',
+		'projects',
+		'certifications',
+		'custom',
+		'skills'
+	]);
+
+	/** @type {Record<string, string>} */
+	const SECTION_LABELS = {
+		summary: 'Summary',
+		experience: 'Experience',
+		education: 'Education',
+		projects: 'Projects',
+		certifications: 'Certifications',
+		custom: 'Custom',
+		skills: 'Skills'
+	};
 
 	/** @type {Record<PaperSize, { label: string; width: string; height: string; size: string }>} */
 	const PAPER = {
 		a4: { label: 'A4', width: '210mm', height: '297mm', size: 'A4' },
 		letter: { label: 'Letter', width: '215.9mm', height: '279.4mm', size: 'Letter' }
 	};
+
+	/** Web-safe / system font stacks — no external font downloads (local-first). */
+	const FONTS = /** @type {Record<string, { label: string; stack: string }>} */ ({
+		system: {
+			label: 'System Sans',
+			stack: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+		},
+		georgia: { label: 'Georgia', stack: "Georgia, 'Times New Roman', Times, serif" },
+		times: { label: 'Times New Roman', stack: "'Times New Roman', Times, serif" },
+		arial: { label: 'Arial', stack: 'Arial, Helvetica, sans-serif' },
+		verdana: { label: 'Verdana', stack: 'Verdana, Geneva, sans-serif' },
+		trebuchet: { label: 'Trebuchet MS', stack: "'Trebuchet MS', Tahoma, sans-serif" },
+		palatino: {
+			label: 'Palatino',
+			stack: "'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif"
+		},
+		courier: { label: 'Courier New', stack: "'Courier New', Courier, monospace" }
+	});
+
+	const FONT_SIZE_MIN = 9;
+	const FONT_SIZE_MAX = 18;
+	const FONT_SIZE_DEFAULT = 12;
 
 	const BULLET_PLACEHOLDER = 'Led platform migration, cut p95 latency 40%\nMentored 4 engineers across 2 squads';
 
@@ -99,10 +181,28 @@
 	/** @returns {Resume} */
 	function defaultResume() {
 		return {
-			personal: { name: '', email: '', phone: '', website: '', linkedin: '', summary: '' },
+			personal: {
+				name: '',
+				headline: '',
+				location: '',
+				email: '',
+				phone: '',
+				website: '',
+				linkedin: '',
+				summary: ''
+			},
 			experience: [],
 			education: [],
-			skills: []
+			projects: [],
+			certifications: [],
+			customSections: [],
+			skills: [],
+			skillStyle: 'line',
+			sectionOrder: [...SECTION_IDS],
+			hiddenSections: [],
+			jobDescription: '',
+			fontFamily: 'system',
+			fontSize: FONT_SIZE_DEFAULT
 		};
 	}
 
@@ -122,6 +222,8 @@
 				: {};
 		base.personal = {
 			name: asText(p.name),
+			headline: asText(p.headline),
+			location: asText(p.location),
 			email: asText(p.email),
 			phone: asText(p.phone),
 			website: asText(p.website),
@@ -159,6 +261,47 @@
 				});
 		}
 
+		if (Array.isArray(source.projects)) {
+			base.projects = source.projects
+				.filter((e) => !!e && typeof e === 'object')
+				.map((e) => {
+					const x = /** @type {Record<string, unknown>} */ (e);
+					return {
+						id: asText(x.id) || uid('proj'),
+						name: asText(x.name),
+						link: asText(x.link),
+						bullets: asText(x.bullets)
+					};
+				});
+		}
+
+		if (Array.isArray(source.certifications)) {
+			base.certifications = source.certifications
+				.filter((e) => !!e && typeof e === 'object')
+				.map((e) => {
+					const x = /** @type {Record<string, unknown>} */ (e);
+					return {
+						id: asText(x.id) || uid('cert'),
+						name: asText(x.name),
+						issuer: asText(x.issuer),
+						year: asText(x.year)
+					};
+				});
+		}
+
+		if (Array.isArray(source.customSections)) {
+			base.customSections = source.customSections
+				.filter((e) => !!e && typeof e === 'object')
+				.map((e) => {
+					const x = /** @type {Record<string, unknown>} */ (e);
+					return {
+						id: asText(x.id) || uid('custom'),
+						title: asText(x.title),
+						body: asText(x.body)
+					};
+				});
+		}
+
 		if (Array.isArray(source.skills)) {
 			base.skills = source.skills
 				.map((s) => asText(s).trim())
@@ -166,7 +309,125 @@
 				.filter((s, i, arr) => arr.indexOf(s) === i);
 		}
 
+		base.skillStyle = source.skillStyle === 'bullets' ? 'bullets' : 'line';
+
+		// Section order: keep known ids in saved order, append any new ones.
+		const savedOrder = Array.isArray(source.sectionOrder)
+			? source.sectionOrder
+					.map((s) => asText(s))
+					.filter((s) => SECTION_IDS.includes(/** @type {never} */ (s)))
+			: [];
+		base.sectionOrder = [
+			...savedOrder,
+			...SECTION_IDS.filter((id) => !savedOrder.includes(id))
+		];
+
+		base.hiddenSections = Array.isArray(source.hiddenSections)
+			? source.hiddenSections
+					.map((s) => asText(s))
+					.filter((s) => SECTION_IDS.includes(/** @type {never} */ (s)))
+			: [];
+
+		base.jobDescription = asText(source.jobDescription);
+
+		const fontKey = asText(source.fontFamily);
+		base.fontFamily = fontKey in FONTS ? fontKey : 'system';
+
+		const size = Number(source.fontSize);
+		base.fontSize = Number.isFinite(size)
+			? Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size))
+			: FONT_SIZE_DEFAULT;
+
 		return base;
+	}
+
+	/** @returns {Resume} */
+	function exampleResume() {
+		return {
+			personal: {
+				name: 'Ada Lovelace',
+				headline: 'Senior Software Engineer',
+				location: 'London, UK',
+				email: 'ada@example.com',
+				phone: '+44 20 7946 0018',
+				website: 'https://ada.dev',
+				linkedin: 'linkedin.com/in/ada',
+				summary:
+					'Software engineer with 8+ years building reliable distributed systems. Comfortable owning services end to end — from design review through on-call — and mentoring engineers to do the same.'
+			},
+			experience: [
+				{
+					id: uid('exp'),
+					company: 'Analytical Engines Ltd',
+					role: 'Senior Software Engineer',
+					startDate: 'Mar 2021',
+					endDate: 'Present',
+					bullets:
+						'Led migration of the billing platform to event-driven architecture, cutting p95 latency 40%\nMentored 4 engineers across 2 squads; all promoted within 18 months\nDrove incident-response process that reduced mean time to recovery from 45 to 12 minutes'
+				},
+				{
+					id: uid('exp'),
+					company: 'Difference Engine Co',
+					role: 'Software Engineer',
+					startDate: 'Jun 2017',
+					endDate: 'Feb 2021',
+					bullets:
+						'Built the internal feature-flag service now used by 30+ teams\nCut CI pipeline duration from 22 to 8 minutes by parallelising test suites'
+				}
+			],
+			education: [
+				{
+					id: uid('edu'),
+					institution: 'University of Cambridge',
+					degree: 'B.A. Mathematics',
+					graduationYear: '2015'
+				}
+			],
+			projects: [
+				{
+					id: uid('proj'),
+					name: 'OpenTelemetry exporter for edge runtimes',
+					link: 'github.com/ada/otel-edge',
+					bullets:
+						'Maintainer of a 1.2k-star library used to trace serverless workloads\nPublished v2 with backward-compatible API after community RFC'
+				}
+			],
+			certifications: [
+				{
+					id: uid('cert'),
+					name: 'AWS Certified Solutions Architect – Associate',
+					issuer: 'Amazon Web Services',
+					year: '2023'
+				}
+			],
+			customSections: [
+				{
+					id: uid('custom'),
+					title: 'Awards',
+					body: 'Grace Hopper Award for Outstanding Engineering, 2022\nOpen Source Contributor Award, 2020'
+				},
+				{
+					id: uid('custom'),
+					title: 'Languages',
+					body: 'English — native\nFrench — professional working proficiency'
+				}
+			],
+			skills: [
+				'TypeScript',
+				'Go',
+				'Svelte',
+				'PostgreSQL',
+				'Kubernetes',
+				'Distributed systems',
+				'Mentoring'
+			],
+			skillStyle: 'line',
+			sectionOrder: [...SECTION_IDS],
+			hiddenSections: [],
+			jobDescription: '',
+			fontFamily: 'system',
+			fontSize: FONT_SIZE_DEFAULT
+		};
 	}
 
 	function loadStored() {
@@ -188,6 +449,11 @@
 	/** @type {ReturnType<typeof setTimeout> | null} */
 	let noticeTimer = null;
 	let fileInput = $state(/** @type {HTMLInputElement | null} */ (null));
+
+	/** @param {number} next */
+	function setFontSize(next) {
+		resume.fontSize = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, next));
+	}
 
 	// Hydration-safe autosave: first pass rehydrates from localStorage without
 	// writing; every subsequent mutation serializes the whole document.
@@ -223,6 +489,7 @@
 
 	const contacts = $derived(
 		[
+			resume.personal.location,
 			resume.personal.email,
 			resume.personal.phone,
 			resume.personal.website,
@@ -231,6 +498,130 @@
 			.map((v) => asText(v).trim())
 			.filter(Boolean)
 	);
+
+	// ── Page-count / overflow detection ──────────────────────────────────
+	// Measures rendered height against one physical page so users learn about
+	// overflow before printing (print CSS lets content spill silently).
+	let pageEl = $state(/** @type {HTMLDivElement | null} */ (null));
+	let pageCount = $state(1);
+	const MM_TO_PX = 96 / 25.4;
+
+	$effect(() => {
+		// Re-run whenever content or paper size changes.
+		void JSON.stringify(resume);
+		void paper;
+		if (!pageEl) {
+			pageCount = 1;
+			return;
+		}
+		const pageHeightPx = (paper === 'a4' ? 297 : 279.4) * MM_TO_PX;
+		const paddingPx = 2 * 14 * MM_TO_PX; // 14mm top + bottom
+		const contentPx = pageEl.scrollHeight - paddingPx;
+		const usablePx = pageHeightPx - paddingPx;
+		const next = Math.max(1, Math.ceil(contentPx / usablePx - 0.05));
+		if (next !== pageCount) pageCount = next;
+	});
+
+	// ── Completeness gauge ───────────────────────────────────────────────
+	const completeness = $derived.by(() => {
+		const p = resume.personal;
+		const checks = [
+			{ label: 'Name', done: !!p.name.trim() },
+			{ label: 'Contact', done: !!(p.email.trim() || p.phone.trim()) },
+			{ label: 'Summary', done: !!p.summary.trim() },
+			{
+				label: 'Experience',
+				done: resume.experience.length > 0 && resume.experience.some((e) => lines(e.bullets).length > 0)
+			},
+			{ label: 'Education', done: resume.education.length > 0 },
+			{ label: 'Skills (3+)', done: resume.skills.length >= 3 }
+		];
+		const done = checks.filter((c) => c.done).length;
+		return { checks, done, total: checks.length, pct: Math.round((done / checks.length) * 100) };
+	});
+
+	// ── Job-description keyword check (gap 8) ────────────────────────────
+	const STOPWORDS = new Set([
+		'the','and','for','are','but','not','you','all','any','can','has','had','his','her',
+		'its','our','out','who','get','how','why','when','what','where','will','would','could',
+		'should','may','might','this','that','these','those','with','from','into','than','then',
+		'they','them','their','been','were','also','more','most','such','only','other','some',
+		'able','using','used','use','well','like','just','over','under','about','after','before',
+		'between','during','through','above','below','each','every','both','few','many','much',
+		'per','via','etc','include','includes','including','required','require','requirements',
+		'preferred','plus','across','within','without','youll','weve','youre','looking','join',
+		'work','working','works','role','roles','job','jobs','position','candidate','team',
+		'company','experience','years','year','strong','good','new','great','help','ensure'
+	]);
+
+	/** @param {string} text @returns {Set<string>} */
+	function keywords(text) {
+		return new Set(
+			asText(text)
+				.toLowerCase()
+				.split(/[^a-z0-9+#.]+/)
+				.map((w) => w.replace(/^[.+#]+|[.+#]+$/g, ''))
+				.filter((w) => w.length >= 3 && !STOPWORDS.has(w))
+		);
+	}
+
+	const keywordReport = $derived.by(() => {
+		const jd = keywords(resume.jobDescription);
+		if (jd.size === 0) return null;
+		const hay = keywords(
+			[
+				resume.personal.name,
+				resume.personal.headline,
+				resume.personal.summary,
+				...resume.experience.map((e) => `${e.role} ${e.company} ${e.bullets}`),
+				...resume.education.map((e) => `${e.degree} ${e.institution}`),
+				...resume.projects.map((p) => `${p.name} ${p.link} ${p.bullets}`),
+				...resume.certifications.map((c) => `${c.name} ${c.issuer}`),
+				...resume.customSections.map((c) => `${c.title} ${c.body}`),
+				resume.skills.join(' ')
+			].join(' ')
+		);
+		const matched = [];
+		const missing = [];
+		for (const word of jd) {
+			if (hay.has(word)) matched.push(word);
+			else missing.push(word);
+		}
+		return {
+			matched,
+			missing,
+			total: jd.size,
+			pct: Math.round((matched.length / jd.size) * 100)
+		};
+	});
+
+	/**
+	 * @param {string} id
+	 * @returns {boolean}
+	 */
+	function sectionVisible(id) {
+		return !resume.hiddenSections.includes(id);
+	}
+
+	/** @param {string} id */
+	function toggleSection(id) {
+		if (resume.hiddenSections.includes(id)) {
+			resume.hiddenSections = resume.hiddenSections.filter((s) => s !== id);
+		} else {
+			resume.hiddenSections = [...resume.hiddenSections, id];
+		}
+	}
+
+	/** @param {number} index @param {number} direction */
+	function moveSection(index, direction) {
+		const target = index + direction;
+		if (target < 0 || target >= resume.sectionOrder.length) return;
+		const list = [...resume.sectionOrder];
+		const swap = list[index];
+		list[index] = list[target];
+		list[target] = swap;
+		resume.sectionOrder = list;
+	}
 
 	/**
 	 * @param {string} message
@@ -309,6 +700,33 @@
 	/** @param {string} id */
 	function removeEducation(id) {
 		resume.education = resume.education.filter((item) => item.id !== id);
+	}
+
+	function addProject() {
+		resume.projects.push({ id: uid('proj'), name: '', link: '', bullets: '' });
+	}
+
+	/** @param {string} id */
+	function removeProject(id) {
+		resume.projects = resume.projects.filter((item) => item.id !== id);
+	}
+
+	function addCertification() {
+		resume.certifications.push({ id: uid('cert'), name: '', issuer: '', year: '' });
+	}
+
+	/** @param {string} id */
+	function removeCertification(id) {
+		resume.certifications = resume.certifications.filter((item) => item.id !== id);
+	}
+
+	function addCustomSection() {
+		resume.customSections.push({ id: uid('custom'), title: '', body: '' });
+	}
+
+	/** @param {string} id */
+	function removeCustomSection(id) {
+		resume.customSections = resume.customSections.filter((item) => item.id !== id);
 	}
 
 	function commitSkills() {
@@ -395,6 +813,21 @@
 		flash('Resume cleared.');
 	}
 
+	function loadExample() {
+		const isEmpty =
+			!resume.personal.name.trim() &&
+			resume.experience.length === 0 &&
+			resume.education.length === 0 &&
+			resume.projects.length === 0 &&
+			resume.certifications.length === 0 &&
+			resume.customSections.length === 0 &&
+			resume.skills.length === 0;
+		if (!isEmpty && !confirm('Replace your current resume with the example?')) return;
+		resume = exampleResume();
+		skillDraft = '';
+		flash('Example resume loaded — edit it or Reset to start fresh.');
+	}
+
 	function printResume() {
 		const onAfterPrint = () => {
 			window.removeEventListener('afterprint', onAfterPrint);
@@ -465,6 +898,48 @@
 				</button>
 			</div>
 
+			<label class="sr-only" for="toolbar-font">Font</label>
+			<select
+				id="toolbar-font"
+				class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+				bind:value={resume.fontFamily}
+			>
+				{#each Object.entries(FONTS) as [key, font] (key)}
+					<option value={key}>{font.label}</option>
+				{/each}
+			</select>
+
+			<div
+				class="flex items-center gap-0.5 rounded-lg border border-slate-200 p-0.5"
+				role="group"
+				aria-label="Font size"
+			>
+				<button
+					type="button"
+					class="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30"
+					aria-label="Decrease font size"
+					disabled={resume.fontSize <= FONT_SIZE_MIN}
+					onclick={() => setFontSize(resume.fontSize - 1)}
+				>
+					A−
+				</button>
+				<span
+					class="min-w-[2.75rem] text-center text-[11px] font-semibold tabular-nums text-slate-700"
+					aria-live="polite"
+				>
+					{resume.fontSize}px
+				</span>
+				<button
+					type="button"
+					class="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30"
+					aria-label="Increase font size"
+					disabled={resume.fontSize >= FONT_SIZE_MAX}
+					onclick={() => setFontSize(resume.fontSize + 1)}
+				>
+					A+
+				</button>
+			</div>
+
 			<input
 				bind:this={fileInput}
 				type="file"
@@ -472,6 +947,7 @@
 				class="hidden"
 				onchange={handleImport}
 			/>
+			<button type="button" class={cls.btnSecondary} onclick={loadExample}>Example</button>
 			<button type="button" class={cls.btnSecondary} onclick={() => fileInput?.click()}>
 				Import JSON
 			</button>
@@ -495,6 +971,43 @@
 			class="no-print w-full shrink-0 border-b border-slate-200 bg-white lg:w-[440px] lg:overflow-y-auto lg:border-b-0 lg:border-r print:hidden"
 		>
 			<div class="space-y-5 p-4 sm:p-6">
+				<!-- Completeness gauge (gap 5) -->
+				<section class={cls.card}>
+					<div class="mb-2 flex items-center justify-between">
+						<h2 class="mb-0 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+							Completeness
+						</h2>
+						<span class="text-[11px] font-semibold tabular-nums text-slate-500">
+							{completeness.done}/{completeness.total}
+						</span>
+					</div>
+					<div
+						class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+						role="progressbar"
+						aria-valuenow={completeness.pct}
+						aria-valuemin="0"
+						aria-valuemax="100"
+						aria-label="Resume completeness"
+					>
+						<div
+							class="h-full rounded-full transition-all duration-300 {completeness.pct === 100
+								? 'bg-emerald-500'
+								: 'bg-blue-500'}"
+							style="width: {completeness.pct}%"
+						></div>
+					</div>
+					<ul class="mt-2.5 flex flex-wrap gap-x-3 gap-y-1">
+						{#each completeness.checks as check (check.label)}
+							<li
+								class="text-[11px] {check.done ? 'text-emerald-600' : 'text-slate-400'}"
+							>
+								{check.done ? '✓' : '○'}
+								{check.label}
+							</li>
+						{/each}
+					</ul>
+				</section>
+
 				<!-- Personal -->
 				<section class={cls.card}>
 					<h2 class={cls.sectionTitle}>Personal</h2>
@@ -510,16 +1023,26 @@
 								bind:value={resume.personal.name}
 							/>
 						</div>
+						<div>
+							<label class={cls.label} for="f-headline">Headline</label>
+							<input
+								id="f-headline"
+								type="text"
+								class={cls.input}
+								placeholder="Senior Software Engineer"
+								bind:value={resume.personal.headline}
+							/>
+						</div>
 						<div class={cls.grid2}>
 							<div>
-								<label class={cls.label} for="f-email">Email</label>
+								<label class={cls.label} for="f-location">Location</label>
 								<input
-									id="f-email"
-									type="email"
+									id="f-location"
+									type="text"
 									class={cls.input}
-									autocomplete="email"
-									placeholder="ada@example.com"
-									bind:value={resume.personal.email}
+									autocomplete="address-level2"
+									placeholder="Berlin, Germany"
+									bind:value={resume.personal.location}
 								/>
 							</div>
 							<div>
@@ -536,6 +1059,17 @@
 						</div>
 						<div class={cls.grid2}>
 							<div>
+								<label class={cls.label} for="f-email">Email</label>
+								<input
+									id="f-email"
+									type="email"
+									class={cls.input}
+									autocomplete="email"
+									placeholder="ada@example.com"
+									bind:value={resume.personal.email}
+								/>
+							</div>
+							<div>
 								<label class={cls.label} for="f-website">Website</label>
 								<input
 									id="f-website"
@@ -545,16 +1079,16 @@
 									bind:value={resume.personal.website}
 								/>
 							</div>
-							<div>
-								<label class={cls.label} for="f-linkedin">LinkedIn</label>
-								<input
-									id="f-linkedin"
-									type="text"
-									class={cls.input}
-									placeholder="linkedin.com/in/ada"
-									bind:value={resume.personal.linkedin}
-								/>
-							</div>
+						</div>
+						<div>
+							<label class={cls.label} for="f-linkedin">LinkedIn</label>
+							<input
+								id="f-linkedin"
+								type="text"
+								class={cls.input}
+								placeholder="linkedin.com/in/ada"
+								bind:value={resume.personal.linkedin}
+							/>
 						</div>
 						<div>
 							<label class={cls.label} for="f-summary">Summary</label>
@@ -795,9 +1329,338 @@
 					</button>
 				</section>
 
+				<!-- Projects (gap 6) -->
+				<section class={cls.card}>
+					<div class="mb-3 flex items-center justify-between">
+						<h2 class="mb-0 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+							Projects
+						</h2>
+						<span class="text-[11px] tabular-nums text-slate-400">
+							{resume.projects.length}
+							{resume.projects.length === 1 ? 'entry' : 'entries'}
+						</span>
+					</div>
+
+					{#if resume.projects.length === 0}
+						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+					{:else}
+						<div class="mb-3 space-y-3">
+							{#each resume.projects as item, i (item.id)}
+								<div class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+									<div class="mb-2.5 flex items-center justify-between gap-2">
+										<span
+											class="text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+										>
+											Project {i + 1}
+										</span>
+										<div class="flex items-center gap-0.5">
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Move up"
+												aria-label="Move project {i + 1} up"
+												disabled={i === 0}
+												onclick={() => moveItem(resume.projects, item.id, -1)}
+											>
+												↑
+											</button>
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Move down"
+												aria-label="Move project {i + 1} down"
+												disabled={i === resume.projects.length - 1}
+												onclick={() => moveItem(resume.projects, item.id, 1)}
+											>
+												↓
+											</button>
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Remove"
+												aria-label="Remove project {i + 1}"
+												onclick={() => removeProject(item.id)}
+											>
+												✕
+											</button>
+										</div>
+									</div>
+
+									<div class="space-y-2.5">
+										<div class={cls.grid2}>
+											<div>
+												<label class={cls.label} for="proj-{item.id}-name">Name</label>
+												<input
+													id="proj-{item.id}-name"
+													type="text"
+													class={cls.input}
+													placeholder="Open-source CLI tool"
+													bind:value={item.name}
+												/>
+											</div>
+											<div>
+												<label class={cls.label} for="proj-{item.id}-link">Link</label>
+												<input
+													id="proj-{item.id}-link"
+													type="text"
+													class={cls.input}
+													placeholder="github.com/you/repo"
+													bind:value={item.link}
+												/>
+											</div>
+										</div>
+										<div>
+											<label class={cls.label} for="proj-{item.id}-bullets">
+												Bullet Points <span class="normal-case text-slate-300">(one per line)</span>
+											</label>
+											<textarea
+												id="proj-{item.id}-bullets"
+												rows="3"
+												class={cls.textarea}
+												placeholder="Built X used by Y; reduced Z by 40%"
+												bind:value={item.bullets}
+											></textarea>
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					<button type="button" class={cls.btnAdd} onclick={addProject}>
+						+ Add project
+					</button>
+				</section>
+
+				<!-- Certifications (gap 6) -->
+				<section class={cls.card}>
+					<div class="mb-3 flex items-center justify-between">
+						<h2 class="mb-0 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+							Certifications
+						</h2>
+						<span class="text-[11px] tabular-nums text-slate-400">
+							{resume.certifications.length}
+							{resume.certifications.length === 1 ? 'entry' : 'entries'}
+						</span>
+					</div>
+
+					{#if resume.certifications.length === 0}
+						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+					{:else}
+						<div class="mb-3 space-y-3">
+							{#each resume.certifications as item, i (item.id)}
+								<div class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+									<div class="mb-2.5 flex items-center justify-between gap-2">
+										<span
+											class="text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+										>
+											Cert {i + 1}
+										</span>
+										<div class="flex items-center gap-0.5">
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Move up"
+												aria-label="Move certification {i + 1} up"
+												disabled={i === 0}
+												onclick={() => moveItem(resume.certifications, item.id, -1)}
+											>
+												↑
+											</button>
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Move down"
+												aria-label="Move certification {i + 1} down"
+												disabled={i === resume.certifications.length - 1}
+												onclick={() => moveItem(resume.certifications, item.id, 1)}
+											>
+												↓
+											</button>
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Remove"
+												aria-label="Remove certification {i + 1}"
+												onclick={() => removeCertification(item.id)}
+											>
+												✕
+											</button>
+										</div>
+									</div>
+
+									<div class="space-y-2.5">
+										<div>
+											<label class={cls.label} for="cert-{item.id}-name">Name</label>
+											<input
+												id="cert-{item.id}-name"
+												type="text"
+												class={cls.input}
+												placeholder="AWS Solutions Architect"
+												bind:value={item.name}
+											/>
+										</div>
+										<div class={cls.grid2}>
+											<div>
+												<label class={cls.label} for="cert-{item.id}-issuer">Issuer</label>
+												<input
+													id="cert-{item.id}-issuer"
+													type="text"
+													class={cls.input}
+													placeholder="Amazon Web Services"
+													bind:value={item.issuer}
+												/>
+											</div>
+											<div>
+												<label class={cls.label} for="cert-{item.id}-year">Year</label>
+												<input
+													id="cert-{item.id}-year"
+													type="text"
+													class={cls.input}
+													placeholder="2024"
+													bind:value={item.year}
+												/>
+											</div>
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					<button type="button" class={cls.btnAdd} onclick={addCertification}>
+						+ Add certification
+					</button>
+				</section>
+
+				<!-- Custom sections -->
+				<section class={cls.card}>
+					<div class="mb-3 flex items-center justify-between">
+						<h2 class="mb-0 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+							Custom sections
+						</h2>
+						<span class="text-[11px] tabular-nums text-slate-400">
+							{resume.customSections.length}
+							{resume.customSections.length === 1 ? 'entry' : 'entries'}
+						</span>
+					</div>
+					<p class="mb-3 text-[11px] leading-4 text-slate-400">
+						Free-form sections for awards, languages, publications — anything else.
+						Line breaks in the body are preserved on the resume.
+					</p>
+
+					{#if resume.customSections.length === 0}
+						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+					{:else}
+						<div class="mb-3 space-y-3">
+							{#each resume.customSections as item, i (item.id)}
+								<div class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+									<div class="mb-2.5 flex items-center justify-between gap-2">
+										<span
+											class="text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+										>
+											Section {i + 1}
+										</span>
+										<div class="flex items-center gap-0.5">
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Move up"
+												aria-label="Move custom section {i + 1} up"
+												disabled={i === 0}
+												onclick={() => moveItem(resume.customSections, item.id, -1)}
+											>
+												↑
+											</button>
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Move down"
+												aria-label="Move custom section {i + 1} down"
+												disabled={i === resume.customSections.length - 1}
+												onclick={() => moveItem(resume.customSections, item.id, 1)}
+											>
+												↓
+											</button>
+											<button
+												type="button"
+												class={cls.iconBtn}
+												title="Remove"
+												aria-label="Remove custom section {i + 1}"
+												onclick={() => removeCustomSection(item.id)}
+											>
+												✕
+											</button>
+										</div>
+									</div>
+
+									<div class="space-y-2.5">
+										<div>
+											<label class={cls.label} for="custom-{item.id}-title">Title</label>
+											<input
+												id="custom-{item.id}-title"
+												type="text"
+												class={cls.input}
+												placeholder="Awards, Languages, Publications…"
+												bind:value={item.title}
+											/>
+										</div>
+										<div>
+											<label class={cls.label} for="custom-{item.id}-body">Body</label>
+											<textarea
+												id="custom-{item.id}-body"
+												rows="4"
+												class={cls.textarea}
+												placeholder={'Grace Hopper Award, 2022\nOpen Source Contributor Award, 2020'}
+												bind:value={item.body}
+											></textarea>
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					<button type="button" class={cls.btnAdd} onclick={addCustomSection}>
+						+ Add custom section
+					</button>
+				</section>
+
 				<!-- Skills -->
 				<section class={cls.card}>
-					<h2 class={cls.sectionTitle}>Skills</h2>
+					<div class="mb-3 flex items-center justify-between gap-2">
+						<h2 class="mb-0 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+							Skills
+						</h2>
+						<div
+							class="flex rounded-lg border border-slate-200 p-0.5"
+							role="group"
+							aria-label="Skills display style"
+						>
+							<button
+								type="button"
+								class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {resume.skillStyle ===
+								'line'
+									? 'bg-slate-900 text-white'
+									: 'text-slate-500 hover:text-slate-800'}"
+								aria-pressed={resume.skillStyle === 'line'}
+								onclick={() => (resume.skillStyle = 'line')}
+							>
+								Line
+							</button>
+							<button
+								type="button"
+								class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {resume.skillStyle ===
+								'bullets'
+									? 'bg-slate-900 text-white'
+									: 'text-slate-500 hover:text-slate-800'}"
+								aria-pressed={resume.skillStyle === 'bullets'}
+								onclick={() => (resume.skillStyle = 'bullets')}
+							>
+								Bullets
+							</button>
+						</div>
+					</div>
 					<div
 						class="flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-white p-2 transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
 					>
@@ -832,6 +1695,147 @@
 					</p>
 				</section>
 
+				<!-- Section order & visibility (gap 7) -->
+				<section class={cls.card}>
+					<h2 class={cls.sectionTitle}>Sections</h2>
+					<p class="mb-2.5 text-[11px] leading-4 text-slate-400">
+						Reorder how sections appear on the resume, or hide ones you don’t need.
+						Hidden sections keep their data.
+					</p>
+					<div class="space-y-1.5">
+						{#each resume.sectionOrder as id, i (id)}
+							<div
+								class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5"
+							>
+								<span
+									class="flex-1 truncate text-[12px] font-medium {sectionVisible(id)
+										? 'text-slate-700'
+										: 'text-slate-400 line-through'}"
+								>
+									{SECTION_LABELS[id] ?? id}
+								</span>
+								<button
+									type="button"
+									class={cls.iconBtn}
+									title="Move {SECTION_LABELS[id] ?? id} up"
+									aria-label="Move {SECTION_LABELS[id] ?? id} up"
+									disabled={i === 0}
+									onclick={() => moveSection(i, -1)}
+								>
+									↑
+								</button>
+								<button
+									type="button"
+									class={cls.iconBtn}
+									title="Move {SECTION_LABELS[id] ?? id} down"
+									aria-label="Move {SECTION_LABELS[id] ?? id} down"
+									disabled={i === resume.sectionOrder.length - 1}
+									onclick={() => moveSection(i, 1)}
+								>
+									↓
+								</button>
+								<button
+									type="button"
+									class="rounded-md px-2 py-1 text-[11px] font-medium transition {sectionVisible(
+										id
+									)
+										? 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+										: 'bg-blue-50 text-blue-700 hover:bg-blue-100'}"
+									aria-pressed={!sectionVisible(id)}
+									onclick={() => toggleSection(id)}
+								>
+									{sectionVisible(id) ? 'Hide' : 'Show'}
+								</button>
+							</div>
+						{/each}
+					</div>
+				</section>
+
+				<!-- Job-description keyword check (gap 8) -->
+				<section class={cls.card}>
+					<h2 class={cls.sectionTitle}>Job description match</h2>
+					<label class={cls.label} for="f-jd">Paste a job posting</label>
+					<textarea
+						id="f-jd"
+						rows="5"
+						class={cls.textarea}
+						placeholder="Paste the job ad here to see which keywords your resume is missing…"
+						bind:value={resume.jobDescription}
+					></textarea>
+					{#if keywordReport}
+						<div class="mt-2.5">
+							<div class="mb-1.5 flex items-center justify-between">
+								<span class="text-[11px] font-medium text-slate-500">
+									{keywordReport.matched.length}/{keywordReport.total} keywords matched
+								</span>
+								<span
+									class="text-[11px] font-semibold tabular-nums {keywordReport.pct >= 70
+										? 'text-emerald-600'
+										: keywordReport.pct >= 40
+											? 'text-amber-600'
+											: 'text-rose-600'}"
+								>
+									{keywordReport.pct}%
+								</span>
+							</div>
+							<div
+								class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+								role="progressbar"
+								aria-valuenow={keywordReport.pct}
+								aria-valuemin="0"
+								aria-valuemax="100"
+								aria-label="Keyword match"
+							>
+								<div
+									class="h-full rounded-full transition-all duration-300 {keywordReport.pct >=
+									70
+										? 'bg-emerald-500'
+										: keywordReport.pct >= 40
+											? 'bg-amber-500'
+											: 'bg-rose-500'}"
+									style="width: {keywordReport.pct}%"
+								></div>
+							</div>
+							{#if keywordReport.missing.length > 0}
+								<p class="mt-2.5 text-[11px] font-medium text-slate-500">
+									Missing from your resume:
+								</p>
+								<div class="mt-1.5 flex flex-wrap gap-1.5">
+									{#each keywordReport.missing as word (word)}
+										<button
+											type="button"
+											class="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 transition hover:bg-amber-100"
+											title="Add “{word}” to your skills"
+											onclick={() => {
+												const w = word.trim();
+												if (w && !resume.skills.includes(w)) resume.skills.push(w);
+											}}
+										>
+											+ {word}
+										</button>
+									{/each}
+								</div>
+								<p class="mt-1.5 text-[10.5px] leading-4 text-slate-400">
+									Click a keyword to add it to Skills — only if it honestly applies.
+								</p>
+							{:else}
+								<p class="mt-2 text-[11px] text-emerald-600">
+									All job-description keywords appear in your resume.
+								</p>
+							{/if}
+						</div>
+					{:else if resume.jobDescription.trim().length > 0}
+						<p class="mt-2 text-[11px] text-slate-400">
+							Keep pasting — need a few meaningful words to compare.
+						</p>
+					{:else}
+						<p class="mt-2 text-[11px] text-slate-400">
+							Compares the posting against your summary, experience, skills, and more.
+							Client-side only — nothing leaves your browser.
+						</p>
+					{/if}
+				</section>
+
 				<p class="pb-2 text-center text-[11px] text-slate-400">
 					Everything stays in your browser — nothing is uploaded.<br />
 					For a clean PDF (Chrome/Edge): uncheck “Headers and footers” under More settings in
@@ -842,18 +1846,47 @@
 
 		<!-- Preview -->
 		<section class="preview-pane flex-1 overflow-auto bg-slate-200/80 p-4 sm:p-8 lg:min-h-0">
+			<!-- Page-count badge (gap 2) -->
+			<div class="no-print mx-auto mb-3 w-fit print:hidden">
+				{#if pageCount > 1}
+					<span
+						class="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800"
+						role="status"
+					>
+						<strong class="font-bold">!</strong>
+						Content fills {pageCount} pages — trim to fit one page
+					</span>
+				{:else}
+					<span
+						class="inline-flex items-center rounded-full border border-slate-300 bg-white/80 px-3 py-1 text-[11px] font-medium text-slate-500"
+						role="status"
+					>
+						1 page
+					</span>
+				{/if}
+			</div>
 			<div class="mx-auto w-fit">
 				<div
+					bind:this={pageEl}
 					class="resume-page"
 					style:--paper-w={PAPER[paper].width}
 					style:--paper-h={PAPER[paper].height}
+					style:--resume-font={FONTS[resume.fontFamily]?.stack ?? FONTS.system.stack}
+					style:--resume-size="{resume.fontSize}px"
 				>
 					<!-- Header -->
 					<header class="border-b-2 border-slate-800 pb-3">
 						<h1 class="resume-name">{resume.personal.name.trim() || 'Your Name'}</h1>
+						{#if resume.personal.headline.trim()}
+							<p
+								class="mt-1 text-center text-[0.958em] font-semibold uppercase tracking-[0.12em] text-slate-600"
+							>
+								{resume.personal.headline}
+							</p>
+						{/if}
 						{#if contacts.length}
 							<p
-								class="mt-1.5 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-center text-[10.5px] leading-4 text-slate-600"
+								class="mt-1.5 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-center text-[0.875em] leading-[1.35] text-slate-600"
 							>
 								{#each contacts as contact, i (i)}
 									{#if i > 0}
@@ -865,89 +1898,158 @@
 						{/if}
 					</header>
 
-					<!-- Summary -->
-					{#if resume.personal.summary.trim()}
-						<section class="mt-4">
-							<h2 class="resume-heading">Summary</h2>
-							<p class="whitespace-pre-line text-[12px] leading-[1.55] text-slate-700">
-								{resume.personal.summary}
-							</p>
-						</section>
-					{/if}
-
-					<!-- Experience -->
-					{#if resume.experience.length}
-						<section class="mt-4">
-							<h2 class="resume-heading">Experience</h2>
-							<div class="space-y-3">
-								{#each resume.experience as job (job.id)}
-									<article>
-										<div class="flex items-baseline justify-between gap-3">
-											<h3 class="text-[13px] font-semibold leading-4 text-slate-900">
-												{job.role.trim() || 'Role'}
-												{#if job.company.trim()}
-													<span class="font-normal text-slate-500"> · </span>
-													<span class="font-medium text-slate-700">{job.company}</span>
+					<!-- Body sections in user-defined order (gaps 6 + 7) -->
+					{#each resume.sectionOrder as id (id)}
+						{#if sectionVisible(id)}
+							{#if id === 'summary' && resume.personal.summary.trim()}
+								<section class="mt-4">
+									<h2 class="resume-heading">Summary</h2>
+									<p class="whitespace-pre-line text-[1em] leading-[1.55] text-slate-700">
+										{resume.personal.summary}
+									</p>
+								</section>
+							{:else if id === 'experience' && resume.experience.length}
+								<section class="mt-4">
+									<h2 class="resume-heading">Experience</h2>
+									<div class="space-y-3">
+										{#each resume.experience as job (job.id)}
+											<article>
+												<div class="flex items-baseline justify-between gap-3">
+													<h3 class="text-[1.083em] font-semibold leading-[1.35] text-slate-900">
+														{job.role.trim() || 'Role'}
+														{#if job.company.trim()}
+															<span class="font-normal text-slate-500"> · </span>
+															<span class="font-medium text-slate-700">{job.company}</span>
+														{/if}
+													</h3>
+													{#if dateRange(job.startDate, job.endDate)}
+														<span
+															class="shrink-0 text-[0.875em] tabular-nums text-slate-500"
+														>
+															{dateRange(job.startDate, job.endDate)}
+														</span>
+													{/if}
+												</div>
+												{#if lines(job.bullets).length}
+													<ul class="resume-bullets mt-1">
+														{#each lines(job.bullets) as bullet (bullet)}
+															<li>{bullet}</li>
+														{/each}
+													</ul>
 												{/if}
-											</h3>
-											{#if dateRange(job.startDate, job.endDate)}
-												<span
-													class="shrink-0 text-[10.5px] tabular-nums text-slate-500"
-												>
-													{dateRange(job.startDate, job.endDate)}
-												</span>
-											{/if}
-										</div>
-										{#if lines(job.bullets).length}
-											<ul class="resume-bullets mt-1">
-												{#each lines(job.bullets) as bullet (bullet)}
-													<li>{bullet}</li>
-												{/each}
-											</ul>
-										{/if}
-									</article>
-								{/each}
-							</div>
-						</section>
-					{/if}
-
-					<!-- Education -->
-					{#if resume.education.length}
-						<section class="mt-4">
-							<h2 class="resume-heading">Education</h2>
-							<div class="space-y-2">
-								{#each resume.education as entry (entry.id)}
-									<article class="flex items-baseline justify-between gap-3">
-										<div>
-											<h3 class="text-[13px] font-semibold leading-4 text-slate-900">
-												{entry.degree.trim() || 'Degree'}
-											</h3>
-											{#if entry.institution.trim()}
-												<p class="text-[12px] leading-4 text-slate-600">
-													{entry.institution}
+											</article>
+										{/each}
+									</div>
+								</section>
+							{:else if id === 'education' && resume.education.length}
+								<section class="mt-4">
+									<h2 class="resume-heading">Education</h2>
+									<div class="space-y-2">
+										{#each resume.education as entry (entry.id)}
+											<article class="flex items-baseline justify-between gap-3">
+												<div>
+													<h3 class="text-[1.083em] font-semibold leading-[1.35] text-slate-900">
+														{entry.degree.trim() || 'Degree'}
+													</h3>
+													{#if entry.institution.trim()}
+														<p class="text-[1em] leading-[1.35] text-slate-600">
+															{entry.institution}
+														</p>
+													{/if}
+												</div>
+												{#if entry.graduationYear.trim()}
+													<span class="shrink-0 text-[0.875em] tabular-nums text-slate-500">
+														{entry.graduationYear}
+													</span>
+												{/if}
+											</article>
+										{/each}
+									</div>
+								</section>
+							{:else if id === 'projects' && resume.projects.length}
+								<section class="mt-4">
+									<h2 class="resume-heading">Projects</h2>
+									<div class="space-y-2.5">
+										{#each resume.projects as project (project.id)}
+											<article>
+												<div class="flex items-baseline justify-between gap-3">
+													<h3 class="text-[1.083em] font-semibold leading-[1.35] text-slate-900">
+														{project.name.trim() || 'Project'}
+														{#if project.link.trim()}
+															<span class="font-normal text-slate-500"> · </span>
+															<span class="font-medium text-slate-700">{project.link}</span>
+														{/if}
+													</h3>
+												</div>
+												{#if lines(project.bullets).length}
+													<ul class="resume-bullets mt-1">
+														{#each lines(project.bullets) as bullet (bullet)}
+															<li>{bullet}</li>
+														{/each}
+													</ul>
+												{/if}
+											</article>
+										{/each}
+									</div>
+								</section>
+							{:else if id === 'certifications' && resume.certifications.length}
+								<section class="mt-4">
+									<h2 class="resume-heading">Certifications</h2>
+									<div class="space-y-1.5">
+										{#each resume.certifications as cert (cert.id)}
+											<article class="flex items-baseline justify-between gap-3">
+												<div>
+													<h3 class="text-[1.042em] font-semibold leading-[1.35] text-slate-900">
+														{cert.name.trim() || 'Certification'}
+													</h3>
+													{#if cert.issuer.trim()}
+														<p class="text-[0.958em] leading-[1.35] text-slate-600">
+															{cert.issuer}
+														</p>
+													{/if}
+												</div>
+												{#if cert.year.trim()}
+													<span class="shrink-0 text-[0.875em] tabular-nums text-slate-500">
+														{cert.year}
+													</span>
+												{/if}
+											</article>
+										{/each}
+									</div>
+								</section>
+							{:else if id === 'custom' && resume.customSections.some((c) => c.title.trim() || c.body.trim())}
+								{#each resume.customSections as custom (custom.id)}
+									{#if custom.title.trim() || custom.body.trim()}
+										<section class="mt-4">
+											<h2 class="resume-heading">
+												{custom.title.trim() || 'Custom'}
+											</h2>
+											{#if custom.body.trim()}
+												<p class="whitespace-pre-line text-[1em] leading-[1.55] text-slate-700">
+													{custom.body}
 												</p>
 											{/if}
-										</div>
-										{#if entry.graduationYear.trim()}
-											<span class="shrink-0 text-[10.5px] tabular-nums text-slate-500">
-												{entry.graduationYear}
-											</span>
-										{/if}
-									</article>
+										</section>
+									{/if}
 								{/each}
-							</div>
-						</section>
-					{/if}
-
-					<!-- Skills -->
-					{#if resume.skills.length}
-						<section class="mt-4">
-							<h2 class="resume-heading">Skills</h2>
-							<p class="text-[12px] leading-[1.55] text-slate-700">
-								{resume.skills.join(' · ')}
-							</p>
-						</section>
-					{/if}
+							{:else if id === 'skills' && resume.skills.length}
+								<section class="mt-4">
+									<h2 class="resume-heading">Skills</h2>
+									{#if resume.skillStyle === 'bullets'}
+										<ul class="resume-bullets">
+											{#each resume.skills as skill (skill)}
+												<li>{skill}</li>
+											{/each}
+										</ul>
+									{:else}
+										<p class="text-[1em] leading-[1.55] text-slate-700">
+											{resume.skills.join(' · ')}
+										</p>
+									{/if}
+								</section>
+							{/if}
+						{/if}
+					{/each}
 				</div>
 			</div>
 		</section>
@@ -965,17 +2067,8 @@
 		padding: 14mm;
 		background: #ffffff;
 		color: #1e293b;
-		font-family:
-			'Inter',
-			ui-sans-serif,
-			system-ui,
-			-apple-system,
-			'Segoe UI',
-			Roboto,
-			'Helvetica Neue',
-			Arial,
-			sans-serif;
-		font-size: 12px;
+		font-family: var(--resume-font, 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
+		font-size: var(--resume-size, 12px);
 		line-height: 1.45;
 		box-shadow:
 			0 1px 2px rgb(15 23 42 / 0.06),
@@ -986,8 +2079,8 @@
 
 	.resume-name {
 		margin: 0;
-		font-family: Georgia, 'Times New Roman', Times, serif;
-		font-size: 25px;
+		font-family: inherit;
+		font-size: 2.083em;
 		font-weight: 700;
 		letter-spacing: 0.06em;
 		line-height: 1.15;
@@ -1001,8 +2094,8 @@
 		margin: 0 0 6px;
 		padding-bottom: 2px;
 		border-bottom: 1px solid #cbd5e1;
-		font-family: Georgia, 'Times New Roman', Times, serif;
-		font-size: 11.5px;
+		font-family: inherit;
+		font-size: 0.958em;
 		font-weight: 700;
 		letter-spacing: 0.16em;
 		text-transform: uppercase;
@@ -1014,7 +2107,7 @@
 		padding-left: 16px;
 		list-style: disc;
 		color: #334155;
-		font-size: 11.5px;
+		font-size: 0.958em;
 		line-height: 1.5;
 	}
 
