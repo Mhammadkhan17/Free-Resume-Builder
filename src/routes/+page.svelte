@@ -444,7 +444,18 @@
 	let resume = $state(defaultResume());
 	/** @type {PaperSize} */
 	let paper = $state('a4');
+	/** @type {'classic' | 'sidebar' | 'ats'} */
+	let template = $state('classic');
+	let accent = $state('#1e293b');
+	let margin = $state('14');
+	let density = $state('normal');
 	let skillDraft = $state('');
+	let history = $state(/** @type {string[]} */ ([]));
+	let historyIndex = $state(-1);
+	let isUndoing = false;
+	let versions = $state(/** @type {{name:string,data:string,date:string}[]} */ ([]));
+	let versionPick = $state('');
+	let showPalette = $state(false);
 	let notice = $state(/** @type {{ text: string; tone: 'ok' | 'bad' }} */ ({ text: '', tone: 'ok' }));
 	/** @type {ReturnType<typeof setTimeout> | null} */
 	let noticeTimer = null;
@@ -464,7 +475,21 @@
 			started = true;
 			const stored = loadStored();
 			if (stored) resume = stored;
+			const snap = JSON.stringify(resume);
+			history = [snap];
+			historyIndex = 0;
+			try { const v = JSON.parse(localStorage.getItem('resume-builder:versions') || '[]'); if (Array.isArray(v)) versions = v; } catch {}
 			return;
+		}
+		if (!isUndoing) {
+			const snap = JSON.stringify(resume);
+			if (history[historyIndex] !== snap) {
+				const next = history.slice(0, historyIndex + 1);
+				next.push(snap);
+				if (next.length > 200) next.shift();
+				history = next;
+				historyIndex = next.length - 1;
+			}
 		}
 		if (typeof localStorage === 'undefined') return;
 		try {
@@ -484,7 +509,22 @@
 			el.id = id;
 			document.head.appendChild(el);
 		}
-		el.textContent = `@media print { @page { size: ${PAPER[paper].size}; margin: 14mm; } }`;
+		el.textContent = `@media print { @page { size: ${PAPER[paper].size}; margin: ${margin}mm; } }`;
+	});
+
+	$effect(() => {
+		if (typeof localStorage === 'undefined') return;
+		try { localStorage.setItem('resume-builder:template', template); localStorage.setItem('resume-builder:accent', accent); localStorage.setItem('resume-builder:margin', margin); localStorage.setItem('resume-builder:density', density); } catch {}
+	});
+
+	// hydrate template
+	$effect(() => {
+		if (typeof localStorage === 'undefined') return;
+		try { const a = localStorage.getItem('resume-builder:accent'); if (a) accent = a; } catch {}
+		try { const m = localStorage.getItem('resume-builder:margin'); if (m) margin = m; } catch {}
+		try { const d = localStorage.getItem('resume-builder:density'); if (d) density = d; } catch {}
+		const t = localStorage.getItem('resume-builder:template');
+		if (t === 'classic' || t === 'sidebar' || t === 'ats') template = t;
 	});
 
 	const contacts = $derived(
@@ -510,12 +550,13 @@
 		// Re-run whenever content or paper size changes.
 		void JSON.stringify(resume);
 		void paper;
+		void margin;
 		if (!pageEl) {
 			pageCount = 1;
 			return;
 		}
 		const pageHeightPx = (paper === 'a4' ? 297 : 279.4) * MM_TO_PX;
-		const paddingPx = 2 * 14 * MM_TO_PX; // 14mm top + bottom
+		const paddingPx = 2 * Number(margin) * MM_TO_PX;
 		const contentPx = pageEl.scrollHeight - paddingPx;
 		const usablePx = pageHeightPx - paddingPx;
 		const next = Math.max(1, Math.ceil(contentPx / usablePx - 0.05));
@@ -767,6 +808,50 @@
 		);
 	}
 
+	function exportMarkdown() {
+		const lines = [];
+		const p = resume.personal;
+		if (p.name) lines.push(`# ${p.name}`);
+		if (p.headline) lines.push(`_${p.headline}_`);
+		const contacts = [p.location, p.email, p.phone, p.website, p.linkedin].filter(Boolean);
+		if (contacts.length) lines.push(contacts.join(' · '));
+		if (p.summary) { lines.push(''); lines.push('## Summary'); lines.push(p.summary); }
+		for (const id of resume.sectionOrder) {
+			if (!sectionVisible(id)) continue;
+			if (id === 'experience' && resume.experience.length) {
+				lines.push(''); lines.push('## Experience');
+				for (const e of resume.experience) {
+					lines.push(`### ${e.role || 'Role'} — ${e.company || ''}`);
+					if (e.startDate || e.endDate) lines.push(`*${dateRange(e.startDate,e.endDate)}*`);
+					for (const b of lines_of(e.bullets)) lines.push(`- ${b}`);
+				}
+			} else if (id === 'education' && resume.education.length) {
+				lines.push(''); lines.push('## Education');
+				for (const e of resume.education) lines.push(`- **${e.degree}** — ${e.institution} ${e.graduationYear}`.trim());
+			} else if (id === 'projects' && resume.projects.length) {
+				lines.push(''); lines.push('## Projects');
+				for (const pr of resume.projects) { lines.push(`### ${pr.name}`); if (pr.link) lines.push(pr.link); for (const b of lines_of(pr.bullets)) lines.push(`- ${b}`); }
+			} else if (id === 'certifications' && resume.certifications.length) {
+				lines.push(''); lines.push('## Certifications');
+				for (const c of resume.certifications) lines.push(`- ${c.name} — ${c.issuer} ${c.year}`.trim());
+			} else if (id === 'custom' && resume.customSections.length) {
+				for (const c of resume.customSections) { lines.push(''); lines.push(`## ${c.title}`); lines.push(c.body); }
+			} else if (id === 'skills' && resume.skills.length) {
+				lines.push(''); lines.push('## Skills'); lines.push(resume.skills.join(', '));
+			}
+		}
+		try {
+			const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url; a.download = `${slugify(resume.personal.name)}-resume.md`;
+			document.body.appendChild(a); a.click(); a.remove();
+			URL.revokeObjectURL(url);
+			flash('Resume exported as Markdown.');
+		} catch { flash('Export failed.', 'bad'); }
+	}
+	function lines_of(/** @type {string} */ text) { return asText(text).split('\n').map((l) => l.trim()).filter(Boolean); }
+
 	function exportJSON() {
 		try {
 			const blob = new Blob([JSON.stringify(resume, null, 2)], {
@@ -797,7 +882,57 @@
 			if (!data || typeof data !== 'object' || Array.isArray(data)) {
 				throw new Error('invalid-shape');
 			}
-			resume = normalize(data);
+			// Support JSON Resume format (basics/work/education/skills)
+			let mapped = data;
+			if (data.basics && !data.personal) {
+				mapped = {
+					personal: {
+						name: data.basics.name || '',
+						headline: data.basics.label || '',
+						location: data.basics.location?.city || '',
+						email: data.basics.email || '',
+						phone: data.basics.phone || '',
+						website: data.basics.url || '',
+						linkedin: (data.basics.profiles || []).find((/** @type {any} */ p) => /linkedin/i.test(p.network))?.url || '',
+						summary: data.basics.summary || ''
+					},
+					experience: (data.work || []).map((/** @type {any} */ w) => ({
+						id: uid('exp'),
+						company: w.name || '',
+						role: w.position || '',
+						startDate: w.startDate || '',
+						endDate: w.endDate || '',
+						bullets: (w.highlights || []).join('\n')
+					})),
+					education: (data.education || []).map((/** @type {any} */ e) => ({
+						id: uid('edu'),
+						institution: e.institution || '',
+						degree: e.studyType ? `${e.studyType} ${e.area || ''}`.trim() : (e.area || ''),
+						graduationYear: e.endDate || ''
+					})),
+					projects: (data.projects || []).map((/** @type {any} */ p) => ({
+						id: uid('proj'),
+						name: p.name || '',
+						link: p.url || '',
+						bullets: (p.highlights || []).join('\n') || (p.description || '')
+					})),
+					certifications: (data.certificates || []).map((/** @type {any} */ c) => ({
+						id: uid('cert'),
+						name: c.name || '',
+						issuer: c.issuer || '',
+						year: c.date || ''
+					})),
+					customSections: [],
+					skills: (data.skills || []).map((/** @type {any} */ s) => s.name).filter(Boolean),
+					skillStyle: 'line',
+					sectionOrder: [...SECTION_IDS],
+					hiddenSections: [],
+					jobDescription: '',
+					fontFamily: 'system',
+					fontSize: FONT_SIZE_DEFAULT
+				};
+			}
+			resume = normalize(mapped);
 			flash('Resume imported successfully.');
 		} catch {
 			flash('Import failed — that file is not valid resume JSON.', 'bad');
@@ -828,6 +963,51 @@
 		flash('Example resume loaded — edit it or Reset to start fresh.');
 	}
 
+	function undo() {
+		if (historyIndex <= 0) return;
+		isUndoing = true;
+		historyIndex -= 1;
+		resume = normalize(JSON.parse(history[historyIndex]));
+		isUndoing = false;
+	}
+	function redo() {
+		if (historyIndex >= history.length - 1) return;
+		isUndoing = true;
+		historyIndex += 1;
+		resume = normalize(JSON.parse(history[historyIndex]));
+		isUndoing = false;
+	}
+
+	function handleKeydown(/** @type {KeyboardEvent} */ event) {
+		const mod = event.metaKey || event.ctrlKey;
+		if (!mod) return;
+		if (event.key === 'z' && !event.shiftKey) { event.preventDefault(); undo(); }
+		else if ((event.key === 'z' && event.shiftKey) || event.key === 'y') { event.preventDefault(); redo(); }
+		else if (event.key === 'p') { event.preventDefault(); printResume(); }
+		else if (event.key === 'k') { event.preventDefault(); showPalette = !showPalette; }
+	}
+
+	function saveVersion() {
+		const name = (prompt('Version name:') || '').trim();
+		if (!name) return;
+		const entry = { name, data: JSON.stringify(resume), date: new Date().toISOString().slice(0,10) };
+		versions = [...versions, entry];
+		try { localStorage.setItem('resume-builder:versions', JSON.stringify(versions)); } catch {}
+		flash(`Saved version “${name}”.`);
+	}
+	function restoreVersion() {
+		const v = versions.find((x) => x.name === versionPick);
+		if (!v) return;
+		if (!confirm(`Restore version “${v.name}”? Current edits will be replaced.`)) return;
+		resume = normalize(JSON.parse(v.data));
+		flash(`Restored “${v.name}”.`);
+	}
+
+	async function copyText() {
+		const lines = [resume.personal.name, resume.personal.headline, ...resume.personal.summary ? [resume.personal.summary] : [], ...resume.experience.map(e => `${e.role} at ${e.company}\n${e.bullets}`), ...resume.skills].filter(Boolean);
+		try { await navigator.clipboard.writeText(lines.join('\n\n')); flash('Copied resume text.'); } catch { flash('Clipboard unavailable.', 'bad'); }
+	}
+
 	function printResume() {
 		const onAfterPrint = () => {
 			window.removeEventListener('afterprint', onAfterPrint);
@@ -841,6 +1021,8 @@
 		window.print();
 	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <svelte:head>
 	<title>Resume Builder</title>
@@ -870,6 +1052,17 @@
 				</span>
 			{/if}
 
+			<label class="sr-only" for="toolbar-template">Template</label>
+			<select
+				id="toolbar-template"
+				class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+				bind:value={template}
+			>
+				<option value="classic">Classic</option>
+				<option value="sidebar">Sidebar</option>
+				<option value="ats">ATS-safe</option>
+			</select>
+
 			<div
 				class="flex rounded-lg border border-slate-200 p-0.5"
 				role="group"
@@ -898,6 +1091,20 @@
 				</button>
 			</div>
 
+			<label class="sr-only" for="toolbar-accent">Accent</label>
+			<input id="toolbar-accent" type="color" class="h-8 w-8 cursor-pointer rounded border border-slate-200" bind:value={accent} />
+			<label class="sr-only" for="toolbar-margin">Margin</label>
+			<select id="toolbar-margin" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={margin}>
+				<option value="10">Narrow</option>
+				<option value="14">Normal</option>
+				<option value="20">Wide</option>
+			</select>
+			<label class="sr-only" for="toolbar-density">Density</label>
+			<select id="toolbar-density" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={density}>
+				<option value="compact">Compact</option>
+				<option value="normal">Normal</option>
+				<option value="relaxed">Relaxed</option>
+			</select>
 			<label class="sr-only" for="toolbar-font">Font</label>
 			<select
 				id="toolbar-font"
@@ -952,7 +1159,21 @@
 				Import JSON
 			</button>
 			<button type="button" class={cls.btnSecondary} onclick={exportJSON}>Export JSON</button>
+			<button type="button" class={cls.btnSecondary} onclick={exportMarkdown}>Export MD</button>
+			<button type="button" class={cls.btnSecondary} onclick={() => { while (pageCount > 1 && resume.fontSize > FONT_SIZE_MIN) setFontSize(resume.fontSize - 1); flash('Fitted to one page.'); }}>Fit 1 page</button>
+			<button type="button" class={cls.btnSecondary} onclick={copyText}>Copy text</button>
+			<button type="button" class={cls.btnGhost} onclick={() => (showPalette = true)}>⌘K</button>
 			<button type="button" class={cls.btnGhost} onclick={resetResume}>Reset</button>
+			<button type="button" class={cls.btnSecondary} onclick={undo} disabled={historyIndex <= 0}>Undo</button>
+			<button type="button" class={cls.btnSecondary} onclick={redo} disabled={historyIndex >= history.length - 1}>Redo</button>
+			<button type="button" class={cls.btnSecondary} onclick={saveVersion}>Save ver.</button>
+			{#if versions.length}
+				<select class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={versionPick}>
+					<option value="">Versions…</option>
+					{#each versions as v (v.name)}<option value={v.name}>{v.name} ({v.date})</option>{/each}
+				</select>
+				<button type="button" class={cls.btnSecondary} onclick={restoreVersion} disabled={!versionPick}>Restore</button>
+			{/if}
 			<button
 				type="button"
 				class={cls.btnPrimary}
@@ -963,6 +1184,14 @@
 			</button>
 		</div>
 	</header>
+
+	{#if showPalette}
+		<div class="no-print fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 pt-24" onclick={() => (showPalette = false)} role="dialog" aria-modal="true">
+			<div class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-2 shadow-xl" onclick={(e) => e.stopPropagation()}>
+				<p class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Command palette</p>
+			</div>
+		</div>
+	{/if}
 
 	<!-- ── Split pane ──────────────────────────────────────────────────── -->
 	<div class="main-shell flex flex-1 flex-col lg:min-h-0 lg:flex-row">
@@ -1100,6 +1329,26 @@
 								bind:value={resume.personal.summary}
 							></textarea>
 						</div>
+					</div>
+				</section>
+
+				<!-- Section visibility -->
+				<section class={cls.card}>
+					<h2 class={cls.sectionTitle}>Sections</h2>
+					<div class="space-y-1.5">
+						{#each resume.sectionOrder as id, i (id)}
+							<div class="flex items-center gap-2">
+								<button type="button" class="rounded px-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" disabled={i===0} onclick={() => moveSection(i,-1)}>↑</button>
+								<button type="button" class="rounded px-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" disabled={i===resume.sectionOrder.length-1} onclick={() => moveSection(i,1)}>↓</button>
+								<button
+									type="button"
+									class="rounded-md border px-2.5 py-1 text-[11px] font-medium transition {sectionVisible(id) ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500'}"
+									onclick={() => toggleSection(id)}
+								>
+									{SECTION_LABELS[id]}
+								</button>
+							</div>
+						{/each}
 					</div>
 				</section>
 
@@ -1868,11 +2117,13 @@
 			<div class="mx-auto w-fit">
 				<div
 					bind:this={pageEl}
-					class="resume-page"
+					class="resume-page template-{template}"
 					style:--paper-w={PAPER[paper].width}
 					style:--paper-h={PAPER[paper].height}
 					style:--resume-font={FONTS[resume.fontFamily]?.stack ?? FONTS.system.stack}
 					style:--resume-size="{resume.fontSize}px"
+				style:--accent={accent}
+				style:--lh={density === "compact" ? "1.3" : density === "relaxed" ? "1.6" : "1.45"}
 				>
 					<!-- Header -->
 					<header class="border-b-2 border-slate-800 pb-3">
@@ -2059,6 +2310,13 @@
 <style>
 	/* ── Screen: document chrome ─────────────────────────────────────── */
 
+	/* Template variants */
+	.resume-page.template-ats .resume-heading { border-bottom: 1px solid #cbd5e1; }
+	.resume-page.template-ats header { border-bottom: 1px solid #000; }
+	.resume-page.template-sidebar { padding: 0; }
+	.resume-page.template-sidebar .resume-page-inner { padding: 14mm; }
+	.resume-page .resume-heading { color: var(--accent, #1e293b); border-bottom-color: var(--accent, #1e293b); }
+	.resume-page header { border-bottom-color: var(--accent, #1e293b); }
 	.resume-page {
 		box-sizing: border-box;
 		width: var(--paper-w, 210mm);
@@ -2069,7 +2327,7 @@
 		color: #1e293b;
 		font-family: var(--resume-font, 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
 		font-size: var(--resume-size, 12px);
-		line-height: 1.45;
+		line-height: var(--lh, 1.45);
 		box-shadow:
 			0 1px 2px rgb(15 23 42 / 0.06),
 			0 12px 32px rgb(15 23 42 / 0.14);
