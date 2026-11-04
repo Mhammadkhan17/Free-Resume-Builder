@@ -1,1 +1,138 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Browser surfaces (craft floor: theme what you did not draw) ───────── */
+
+::selection {
+	background: rgb(37 99 235 / 0.2);
+	color: #0f172a;
+}
+
+.dark ::selection {
+	background: rgb(96 165 250 / 0.3);
+	color: #e2e8f0;
+}
+
+::-webkit-selection {
+	background: rgb(37 99 235 / 0.2);
+	color: #0f172a;
+}
+
+* {
+	caret-color: #2563eb;
+}
+
+:focus-visible {
+	outline: 2px solid #2563eb;
+	outline-offset: 2px;
+}
+
+/* Custom scrollbar — webkit */
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #cbd5e1;
+	border-radius: 6px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: #94a3b8;
+}
+
+::-webkit-scrollbar-corner {
+	background: transparent;
+}
+
+/* Firefox scrollbar */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: #cbd5e1 transparent;
+}
+
+.dark * {
+	scrollbar-color: #475569 transparent;
+}
+
+/* ── Dark mode: editor chrome only ──────────────────────────────────────
+   The resume preview stays white — it is a print artifact. These rules
+   are unlayered, so they beat Tailwind's utility layer without needing
+   dark: on every one-off class. Scoped to the toolbar and editor pane. */
+.dark header.no-print,
+.dark aside {
+	color-scheme: dark;
+}
+
+.dark header.no-print select,
+.dark aside select,
+.dark .overflow-menu,
+.dark [role='dialog'],
+.dark aside .bg-white {
+	background-color: #0f172a;
+	border-color: #334155;
+	color: #e2e8f0;
+}
+
+.dark header.no-print .border-slate-200,
+.dark aside .border-slate-200,
+.dark aside .border-slate-300 {
+	border-color: #334155;
+}
+
+.dark aside .bg-slate-50\/70,
+.dark aside .bg-slate-50,
+.dark aside .bg-slate-100,
+.dark header.no-print .bg-slate-100 {
+	background-color: #1e293b;
+}
+
+.dark aside .text-slate-900,
+.dark aside .text-slate-800,
+.dark aside .text-slate-700,
+.dark header.no-print .text-slate-900,
+.dark header.no-print .text-slate-700,
+.dark .overflow-menu .text-slate-700 {
+	color: #e2e8f0;
+}
+
+.dark header.no-print .text-slate-500,
+.dark aside .text-slate-500 {
+	color: #94a3b8;
+}
+
+.dark header.no-print .hover\:bg-slate-50:hover,
+.dark .overflow-menu .hover\:bg-slate-50:hover,
+.dark header.no-print .hover\:bg-slate-100:hover {
+	background-color: #1e293b;
+}
+
+.dark header.no-print .hover\:text-slate-800:hover,
+.dark header.no-print .hover\:text-slate-600:hover {
+	color: #e2e8f0;
+}
+
+/* Active segment (A4/Letter, Line/Bullets…) must stay legible on dark. */
+.dark header.no-print [aria-pressed='true'],
+.dark aside [aria-pressed='true'] {
+	background-color: #e2e8f0;
+	color: #0f172a;
+}
+
+.dark aside .border-slate-900.bg-slate-900 {
+	background-color: #e2e8f0;
+	color: #0f172a;
+	border-color: #e2e8f0;
+}
+
+.dark aside .hover\:bg-slate-300:hover {
+	background-color: #334155;
+}

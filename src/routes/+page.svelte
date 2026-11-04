@@ -1,4 +1,9 @@
 <script>
+	import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+	import { dndzone } from 'svelte-dnd-action';
+	import * as pdfjsLib from 'pdfjs-dist';
+	import { ArrowUp, ArrowDown, X } from 'lucide-svelte';
+	pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 	/**
 	 * Local-first Resume Builder
 	 * Single-file Svelte 5 component. Zero external runtime dependencies.
@@ -138,26 +143,41 @@
 
 	const BULLET_PLACEHOLDER = 'Led platform migration, cut p95 latency 40%\nMentored 4 engineers across 2 squads';
 
+	/** Keyboard-command palette entries (⌘K). Each runs an existing action. */
+	const commands = [
+		{ key: '⌘P', label: 'Print / Save PDF', desc: 'Open print dialog for a clean PDF', action: printResume },
+		{ key: '⌘Z', label: 'Undo', desc: 'Revert the last change', action: undo },
+		{ key: '⌘Y', label: 'Redo', desc: 'Reapply the last undone change', action: redo },
+		{ key: '⌘K', label: 'Close palette', desc: 'Dismiss this menu', action: () => { showPalette = false; } },
+		{ key: '', label: 'Export JSON', desc: 'Download the resume as JSON', action: exportJSON },
+		{ key: '', label: 'Export Markdown', desc: 'Download the resume as Markdown', action: exportMarkdown },
+		{ key: '', label: 'Export DOCX', desc: 'Download the resume as a Word document', action: exportDOCX },
+		{ key: '', label: 'Import JSON', desc: 'Load a resume from a JSON file', action: () => { fileInput?.click(); } },
+		{ key: '', label: 'New example', desc: 'Load the example resume', action: loadExample },
+		{ key: '', label: 'Reset', desc: 'Clear all data and start over', action: resetResume },
+		{ key: '', label: 'Toggle dark mode', desc: 'Switch between light and dark editor', action: () => { darkMode = !darkMode; } },
+	];
+
 	const cls = {
 		label:
-			'mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500',
+			'mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400',
 		input:
-			'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] leading-5 text-slate-900 placeholder:text-slate-400 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20',
+			'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] leading-5 text-slate-900 placeholder:text-slate-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-400',
 		textarea:
-			'w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] leading-5 text-slate-900 placeholder:text-slate-400 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20',
+			'w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] leading-5 text-slate-900 placeholder:text-slate-500 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-400',
 		btnSecondary:
-			'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30',
+			'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100',
 		btnPrimary:
-			'inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-1',
+			'inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-1 dark:focus:ring-offset-slate-900',
 		btnGhost:
-			'inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30',
+			'inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300',
 		btnAdd:
-			'inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30',
+			'inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-blue-400',
 		iconBtn:
-			'inline-flex h-6 w-6 items-center justify-center rounded-md text-[13px] leading-none text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30',
-		card: 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm',
+			'inline-flex h-6 w-6 items-center justify-center rounded-md text-[13px] leading-none text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200',
+		card: 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900',
 		sectionTitle:
-			'mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400',
+			'mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400',
 		fieldGroup: 'space-y-3',
 		grid2: 'grid grid-cols-1 gap-2.5 sm:grid-cols-2'
 	};
@@ -449,6 +469,9 @@
 	let accent = $state('#1e293b');
 	let margin = $state('14');
 	let density = $state('normal');
+	let darkMode = $state(false);
+	let expItems = $state(/** @type {any[]} */ ([]));
+	$effect(() => { expItems = [...resume.experience]; });
 	let skillDraft = $state('');
 	let history = $state(/** @type {string[]} */ ([]));
 	let historyIndex = $state(-1);
@@ -456,6 +479,7 @@
 	let versions = $state(/** @type {{name:string,data:string,date:string}[]} */ ([]));
 	let versionPick = $state('');
 	let showPalette = $state(false);
+	let showMore = $state(false);
 	let notice = $state(/** @type {{ text: string; tone: 'ok' | 'bad' }} */ ({ text: '', tone: 'ok' }));
 	/** @type {ReturnType<typeof setTimeout> | null} */
 	let noticeTimer = null;
@@ -478,7 +502,17 @@
 			const snap = JSON.stringify(resume);
 			history = [snap];
 			historyIndex = 0;
-			try { const v = JSON.parse(localStorage.getItem('resume-builder:versions') || '[]'); if (Array.isArray(v)) versions = v; } catch {}
+			try {
+				const v = JSON.parse(localStorage.getItem('resume-builder:versions') || '[]');
+				if (Array.isArray(v)) {
+					const seen = new Set();
+					versions = v.filter((x) => {
+						if (!x || typeof x.name !== 'string' || seen.has(x.name)) return false;
+						seen.add(x.name);
+						return true;
+					});
+				}
+			} catch {}
 			return;
 		}
 		if (!isUndoing) {
@@ -512,9 +546,15 @@
 		el.textContent = `@media print { @page { size: ${PAPER[paper].size}; margin: ${margin}mm; } }`;
 	});
 
+	let settingsHydrated = $state(false);
 	$effect(() => {
-		if (typeof localStorage === 'undefined') return;
-		try { localStorage.setItem('resume-builder:template', template); localStorage.setItem('resume-builder:accent', accent); localStorage.setItem('resume-builder:margin', margin); localStorage.setItem('resume-builder:density', density); } catch {}
+		if (typeof localStorage === 'undefined' || !settingsHydrated) return;
+		try { localStorage.setItem('resume-builder:template', template); localStorage.setItem('resume-builder:accent', accent); localStorage.setItem('resume-builder:margin', margin); localStorage.setItem('resume-builder:density', density); localStorage.setItem('resume-builder:dark', darkMode ? '1' : '0'); } catch {}
+	});
+
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		document.documentElement.classList.toggle('dark', darkMode);
 	});
 
 	// hydrate template
@@ -523,8 +563,10 @@
 		try { const a = localStorage.getItem('resume-builder:accent'); if (a) accent = a; } catch {}
 		try { const m = localStorage.getItem('resume-builder:margin'); if (m) margin = m; } catch {}
 		try { const d = localStorage.getItem('resume-builder:density'); if (d) density = d; } catch {}
+		try { const dm = localStorage.getItem('resume-builder:dark'); if (dm) darkMode = dm === '1'; } catch {}
 		const t = localStorage.getItem('resume-builder:template');
 		if (t === 'classic' || t === 'sidebar' || t === 'ats') template = t;
+		settingsHydrated = true;
 	});
 
 	const contacts = $derived(
@@ -877,6 +919,20 @@
 		const file = input.files && input.files[0];
 		if (!file) return;
 		try {
+			if (/\.pdf$/i.test(file.name)) {
+				const buf = await file.arrayBuffer();
+				const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+				let out = '';
+				for (let i = 1; i <= pdf.numPages; i++) {
+					const page = await pdf.getPage(i);
+					const content = await page.getTextContent();
+					out += content.items.map((it) => ('str' in it ? it.str : '')).join(' ') + '\n';
+				}
+				resume.customSections = [...resume.customSections, { id: uid('custom'), title: `Imported from ${file.name}`, body: out.trim() }];
+				flash('PDF text imported into a custom section.');
+				input.value = '';
+				return;
+			}
 			const text = await file.text();
 			const data = JSON.parse(text);
 			if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -991,9 +1047,12 @@
 		const name = (prompt('Version name:') || '').trim();
 		if (!name) return;
 		const entry = { name, data: JSON.stringify(resume), date: new Date().toISOString().slice(0,10) };
-		versions = [...versions, entry];
+		const existing = versions.findIndex((v) => v.name === name);
+		versions = existing >= 0
+			? versions.map((v, i) => (i === existing ? entry : v))
+			: [...versions, entry];
 		try { localStorage.setItem('resume-builder:versions', JSON.stringify(versions)); } catch {}
-		flash(`Saved version “${name}”.`);
+		flash(existing >= 0 ? `Updated version “${name}”.` : `Saved version “${name}”.`);
 	}
 	function restoreVersion() {
 		const v = versions.find((x) => x.name === versionPick);
@@ -1007,6 +1066,52 @@
 		const lines = [resume.personal.name, resume.personal.headline, ...resume.personal.summary ? [resume.personal.summary] : [], ...resume.experience.map(e => `${e.role} at ${e.company}\n${e.bullets}`), ...resume.skills].filter(Boolean);
 		try { await navigator.clipboard.writeText(lines.join('\n\n')); flash('Copied resume text.'); } catch { flash('Clipboard unavailable.', 'bad'); }
 	}
+
+	async function exportDOCX() {
+		const children = [];
+		const p = resume.personal;
+		children.push(new Paragraph({ text: p.name || 'Your Name', heading: HeadingLevel.TITLE }));
+		if (p.headline) children.push(new Paragraph({ text: p.headline }));
+		const contacts = [p.location, p.email, p.phone, p.website, p.linkedin].filter(Boolean);
+		if (contacts.length) children.push(new Paragraph({ text: contacts.join(' · ') }));
+		if (p.summary) { children.push(new Paragraph({ text: 'Summary', heading: HeadingLevel.HEADING_2 })); children.push(new Paragraph({ text: p.summary })); }
+		for (const id of resume.sectionOrder) {
+			if (!sectionVisible(id)) continue;
+			if (id === 'experience' && resume.experience.length) {
+				children.push(new Paragraph({ text: 'Experience', heading: HeadingLevel.HEADING_2 }));
+				for (const e of resume.experience) {
+					children.push(new Paragraph({ text: `${e.role} — ${e.company}`, heading: HeadingLevel.HEADING_3 }));
+					if (e.startDate || e.endDate) children.push(new Paragraph({ text: dateRange(e.startDate, e.endDate), style: 'IntenseQuote' }));
+					for (const b of lines(e.bullets)) children.push(new Paragraph({ text: b, bullet: { level: 0 } }));
+				}
+			} else if (id === 'education' && resume.education.length) {
+				children.push(new Paragraph({ text: 'Education', heading: HeadingLevel.HEADING_2 }));
+				for (const e of resume.education) children.push(new Paragraph({ text: `${e.degree} — ${e.institution} ${e.graduationYear}`.trim() }));
+			} else if (id === 'projects' && resume.projects.length) {
+				children.push(new Paragraph({ text: 'Projects', heading: HeadingLevel.HEADING_2 }));
+				for (const pr of resume.projects) { children.push(new Paragraph({ text: pr.name, heading: HeadingLevel.HEADING_3 })); for (const b of lines(pr.bullets)) children.push(new Paragraph({ text: b, bullet: { level: 0 } })); }
+			} else if (id === 'certifications' && resume.certifications.length) {
+				children.push(new Paragraph({ text: 'Certifications', heading: HeadingLevel.HEADING_2 }));
+				for (const c of resume.certifications) children.push(new Paragraph({ text: `${c.name} — ${c.issuer} ${c.year}`.trim() }));
+			} else if (id === 'custom' && resume.customSections.length) {
+				for (const c of resume.customSections) { children.push(new Paragraph({ text: c.title, heading: HeadingLevel.HEADING_2 })); children.push(new Paragraph({ text: c.body })); }
+			} else if (id === 'skills' && resume.skills.length) {
+				children.push(new Paragraph({ text: 'Skills', heading: HeadingLevel.HEADING_2 }));
+				children.push(new Paragraph({ text: resume.skills.join(', ') }));
+			}
+		}
+		const doc = new Document({ sections: [{ children }] });
+		const blob = await Packer.toBlob(doc);
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url; a.download = `${slugify(resume.personal.name)}-resume.docx`;
+		document.body.appendChild(a); a.click(); a.remove();
+		URL.revokeObjectURL(url);
+		flash('Resume exported as DOCX.');
+	}
+
+	function handleExpConsider(/** @type {any} */ e) { expItems = e.detail.items; }
+	function handleExpFinalize(/** @type {any} */ e) { expItems = e.detail.items; resume.experience = expItems; }
 
 	function printResume() {
 		const onAfterPrint = () => {
@@ -1022,7 +1127,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onclick={(e) => { if (showMore && !e.composedPath().some((el) => el instanceof Element && (el.classList.contains('overflow-menu') || el.classList.contains('more-wrapper')))) showMore = false; }} />
 
 <svelte:head>
 	<title>Resume Builder</title>
@@ -1030,14 +1135,14 @@
 </svelte:head>
 
 <div
-	class="app-shell flex min-h-screen flex-col bg-slate-100 text-slate-900 antialiased lg:h-screen lg:min-h-0 lg:overflow-hidden"
+	class="app-shell flex min-h-screen flex-col bg-slate-100 text-slate-900 antialiased lg:h-screen lg:min-h-0 lg:overflow-hidden dark:bg-slate-950 dark:text-slate-100"
 >
 	<!-- ── Toolbar ─────────────────────────────────────────────────────── -->
-	<header class="no-print border-b border-slate-200 bg-white print:hidden">
+	<header class="no-print border-b border-slate-200 bg-white print:hidden dark:border-slate-800 dark:bg-slate-900">
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
-			<div class="mr-auto flex items-baseline gap-2.5">
+			<div class="flex items-baseline gap-2.5 shrink-0">
 				<h1 class="text-sm font-semibold tracking-tight text-slate-900">Resume Builder</h1>
-				<span class="hidden text-[11px] text-slate-400 sm:inline">local-first · autosaved</span>
+				<span class="hidden text-[11px] text-slate-500 sm:inline">local-first · autosaved</span>
 			</div>
 
 			{#if notice.text}
@@ -1052,128 +1157,139 @@
 				</span>
 			{/if}
 
-			<label class="sr-only" for="toolbar-template">Template</label>
-			<select
-				id="toolbar-template"
-				class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-				bind:value={template}
-			>
-				<option value="classic">Classic</option>
-				<option value="sidebar">Sidebar</option>
-				<option value="ats">ATS-safe</option>
-			</select>
-
-			<div
-				class="flex rounded-lg border border-slate-200 p-0.5"
-				role="group"
-				aria-label="Paper size"
-			>
-				<button
-					type="button"
-					class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {paper === 'a4'
-						? 'bg-slate-900 text-white'
-						: 'text-slate-500 hover:text-slate-800'}"
-					aria-pressed={paper === 'a4'}
-					onclick={() => (paper = 'a4')}
+			<!-- Document definition (set once per resume) -->
+			<div class="flex items-center gap-2">
+				<label class="sr-only" for="toolbar-template">Template</label>
+				<select
+					id="toolbar-template"
+					class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+					bind:value={template}
 				>
-					A4
-				</button>
-				<button
-					type="button"
-					class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {paper ===
-					'letter'
-						? 'bg-slate-900 text-white'
-						: 'text-slate-500 hover:text-slate-800'}"
-					aria-pressed={paper === 'letter'}
-					onclick={() => (paper = 'letter')}
-				>
-					Letter
-				</button>
-			</div>
-
-			<label class="sr-only" for="toolbar-accent">Accent</label>
-			<input id="toolbar-accent" type="color" class="h-8 w-8 cursor-pointer rounded border border-slate-200" bind:value={accent} />
-			<label class="sr-only" for="toolbar-margin">Margin</label>
-			<select id="toolbar-margin" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={margin}>
-				<option value="10">Narrow</option>
-				<option value="14">Normal</option>
-				<option value="20">Wide</option>
-			</select>
-			<label class="sr-only" for="toolbar-density">Density</label>
-			<select id="toolbar-density" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={density}>
-				<option value="compact">Compact</option>
-				<option value="normal">Normal</option>
-				<option value="relaxed">Relaxed</option>
-			</select>
-			<label class="sr-only" for="toolbar-font">Font</label>
-			<select
-				id="toolbar-font"
-				class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-				bind:value={resume.fontFamily}
-			>
-				{#each Object.entries(FONTS) as [key, font] (key)}
-					<option value={key}>{font.label}</option>
-				{/each}
-			</select>
-
-			<div
-				class="flex items-center gap-0.5 rounded-lg border border-slate-200 p-0.5"
-				role="group"
-				aria-label="Font size"
-			>
-				<button
-					type="button"
-					class="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30"
-					aria-label="Decrease font size"
-					disabled={resume.fontSize <= FONT_SIZE_MIN}
-					onclick={() => setFontSize(resume.fontSize - 1)}
-				>
-					A−
-				</button>
-				<span
-					class="min-w-[2.75rem] text-center text-[11px] font-semibold tabular-nums text-slate-700"
-					aria-live="polite"
-				>
-					{resume.fontSize}px
-				</span>
-				<button
-					type="button"
-					class="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30"
-					aria-label="Increase font size"
-					disabled={resume.fontSize >= FONT_SIZE_MAX}
-					onclick={() => setFontSize(resume.fontSize + 1)}
-				>
-					A+
-				</button>
-			</div>
-
-			<input
-				bind:this={fileInput}
-				type="file"
-				accept="application/json,.json"
-				class="hidden"
-				onchange={handleImport}
-			/>
-			<button type="button" class={cls.btnSecondary} onclick={loadExample}>Example</button>
-			<button type="button" class={cls.btnSecondary} onclick={() => fileInput?.click()}>
-				Import JSON
-			</button>
-			<button type="button" class={cls.btnSecondary} onclick={exportJSON}>Export JSON</button>
-			<button type="button" class={cls.btnSecondary} onclick={exportMarkdown}>Export MD</button>
-			<button type="button" class={cls.btnSecondary} onclick={() => { while (pageCount > 1 && resume.fontSize > FONT_SIZE_MIN) setFontSize(resume.fontSize - 1); flash('Fitted to one page.'); }}>Fit 1 page</button>
-			<button type="button" class={cls.btnSecondary} onclick={copyText}>Copy text</button>
-			<button type="button" class={cls.btnGhost} onclick={() => (showPalette = true)}>⌘K</button>
-			<button type="button" class={cls.btnGhost} onclick={resetResume}>Reset</button>
-			<button type="button" class={cls.btnSecondary} onclick={undo} disabled={historyIndex <= 0}>Undo</button>
-			<button type="button" class={cls.btnSecondary} onclick={redo} disabled={historyIndex >= history.length - 1}>Redo</button>
-			<button type="button" class={cls.btnSecondary} onclick={saveVersion}>Save ver.</button>
-			{#if versions.length}
-				<select class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={versionPick}>
-					<option value="">Versions…</option>
-					{#each versions as v (v.name)}<option value={v.name}>{v.name} ({v.date})</option>{/each}
+					<option value="classic">Classic</option>
+					<option value="sidebar">Sidebar</option>
+					<option value="ats">ATS-safe</option>
 				</select>
-				<button type="button" class={cls.btnSecondary} onclick={restoreVersion} disabled={!versionPick}>Restore</button>
-			{/if}
+				<div
+					class="flex rounded-lg border border-slate-200 p-0.5"
+					role="group"
+					aria-label="Paper size"
+				>
+					<button
+						type="button"
+						class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {paper === 'a4'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-500 hover:text-slate-800'}"
+						aria-pressed={paper === 'a4'}
+						onclick={() => (paper = 'a4')}
+					>
+						A4
+					</button>
+					<button
+						type="button"
+						class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {paper ===
+						'letter'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-500 hover:text-slate-800'}"
+						aria-pressed={paper === 'letter'}
+						onclick={() => (paper = 'letter')}
+					>
+						Letter
+					</button>
+				</div>
+			</div>
+
+			<!-- Appearance tuning (occasional) -->
+			<div class="flex items-center gap-2">
+				<label class="sr-only" for="toolbar-accent">Accent</label>
+				<input id="toolbar-accent" type="color" class="h-8 w-8 cursor-pointer rounded border border-slate-200" bind:value={accent} />
+				<label class="sr-only" for="toolbar-margin">Margin</label>
+				<select id="toolbar-margin" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={margin}>
+					<option value="10">Narrow</option>
+					<option value="14">Normal</option>
+					<option value="20">Wide</option>
+				</select>
+				<label class="sr-only" for="toolbar-density">Density</label>
+				<select id="toolbar-density" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700" bind:value={density}>
+					<option value="compact">Compact</option>
+					<option value="normal">Normal</option>
+					<option value="relaxed">Relaxed</option>
+				</select>
+				<label class="sr-only" for="toolbar-font">Font</label>
+				<select
+					id="toolbar-font"
+					class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+					bind:value={resume.fontFamily}
+				>
+					{#each Object.entries(FONTS) as [key, font] (key)}
+						<option value={key}>{font.label}</option>
+					{/each}
+				</select>
+				<div
+					class="flex items-center gap-0.5 rounded-lg border border-slate-200 p-0.5"
+					role="group"
+					aria-label="Font size"
+				>
+					<button
+						type="button"
+						class="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30"
+						aria-label="Decrease font size"
+						disabled={resume.fontSize <= FONT_SIZE_MIN}
+						onclick={() => setFontSize(resume.fontSize - 1)}
+					>
+						A−
+					</button>
+					<span
+						class="min-w-[2.75rem] text-center text-[11px] font-semibold tabular-nums text-slate-700"
+						aria-live="polite"
+					>
+						{resume.fontSize}px
+					</span>
+					<button
+						type="button"
+						class="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 transition hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:pointer-events-none disabled:opacity-30"
+						aria-label="Increase font size"
+						disabled={resume.fontSize >= FONT_SIZE_MAX}
+						onclick={() => setFontSize(resume.fontSize + 1)}
+					>
+						A+
+					</button>
+				</div>
+			</div>
+
+			<!-- Editing controls (high frequency) -->
+			<div class="flex items-center gap-2">
+				<button type="button" class={cls.btnSecondary} onclick={undo} disabled={historyIndex <= 0}>Undo</button>
+				<button type="button" class={cls.btnSecondary} onclick={redo} disabled={historyIndex >= history.length - 1}>Redo</button>
+				<button type="button" class={cls.btnGhost} onclick={() => (showPalette = true)}>⌘K</button>
+				<button type="button" class={cls.btnGhost} onclick={() => (darkMode = !darkMode)}>{darkMode ? "Light" : "Dark"}</button>
+			</div>
+
+			<!-- Overflow: infrequent file-level actions -->
+			<div class="relative more-wrapper ml-auto">
+				<button type="button" class={cls.btnSecondary} onclick={() => (showMore = !showMore)}>More</button>
+				{#if showMore}
+					<div class="overflow-menu absolute right-0 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl z-50">
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { loadExample(); showMore = false; }}>Example</button>
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { fileInput?.click(); showMore = false; }}>Import JSON</button>
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { exportJSON(); showMore = false; }}>Export JSON</button>
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { exportMarkdown(); showMore = false; }}>Export Markdown</button>
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { exportDOCX(); showMore = false; }}>Export DOCX</button>
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { while (pageCount > 1 && resume.fontSize > FONT_SIZE_MIN) setFontSize(resume.fontSize - 1); flash('Fitted to one page.'); showMore = false; }}>Fit 1 page</button>
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { copyText(); showMore = false; }}>Copy text</button>
+						<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50 text-rose-600" onclick={() => { resetResume(); showMore = false; }}>Reset</button>
+						<button type="button" class={cls.btnSecondary} onclick={() => { saveVersion(); showMore = false; }}>Save version</button>
+						{#if versions.length}
+							<select class="w-full rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 mt-1 mb-1" bind:value={versionPick}>
+								<option value="">Restore version…</option>
+								{#each versions as v, i (i)}<option value={v.name}>{v.name} ({v.date})</option>{/each}
+							</select>
+							<button type="button" class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50" onclick={() => { restoreVersion(); showMore = false; }} disabled={!versionPick}>Restore</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Primary action -->
 			<button
 				type="button"
 				class={cls.btnPrimary}
@@ -1186,9 +1302,28 @@
 	</header>
 
 	{#if showPalette}
-		<div class="no-print fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 pt-24" onclick={() => (showPalette = false)} role="dialog" aria-modal="true">
-			<div class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-2 shadow-xl" onclick={(e) => e.stopPropagation()}>
-				<p class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Command palette</p>
+		<div class="no-print fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 pt-24" onclick={(e) => { if (e.target === e.currentTarget) showPalette = false; }} onkeydown={(e) => e.key === "Escape" && (showPalette = false)} role="dialog" aria-modal="true" tabindex="-1">
+			<div class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+				<p class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Command palette</p>
+				<div class="divide-y divide-slate-100">
+					{#each commands as cmd (cmd.label)}
+						<button
+							type="button"
+							class="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+							onclick={cmd.action}
+						>
+							{#if cmd.key}
+								<kbd class="shrink-0 rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+									{cmd.key}
+								</kbd>
+							{:else}
+								<span class="shrink-0 w-6" aria-hidden="true"> </span>
+							{/if}
+							<span class="flex-1 truncate">{cmd.label}</span>
+							<span class="text-[11px] text-slate-500">{cmd.desc}</span>
+						</button>
+					{/each}
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -1197,7 +1332,7 @@
 	<div class="main-shell flex flex-1 flex-col lg:min-h-0 lg:flex-row">
 		<!-- Editor -->
 		<aside
-			class="no-print w-full shrink-0 border-b border-slate-200 bg-white lg:w-[440px] lg:overflow-y-auto lg:border-b-0 lg:border-r print:hidden"
+			class="no-print w-full shrink-0 border-b border-slate-200 bg-white lg:w-[440px] lg:overflow-y-auto lg:border-b-0 lg:border-r print:hidden dark:border-slate-800 dark:bg-slate-900"
 		>
 			<div class="space-y-5 p-4 sm:p-6">
 				<!-- Completeness gauge (gap 5) -->
@@ -1338,8 +1473,8 @@
 					<div class="space-y-1.5">
 						{#each resume.sectionOrder as id, i (id)}
 							<div class="flex items-center gap-2">
-								<button type="button" class="rounded px-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" disabled={i===0} onclick={() => moveSection(i,-1)}>↑</button>
-								<button type="button" class="rounded px-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" disabled={i===resume.sectionOrder.length-1} onclick={() => moveSection(i,1)}>↓</button>
+								<button type="button" class="rounded px-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" aria-label="Move {SECTION_LABELS[id]} up" disabled={i===0} onclick={() => moveSection(i,-1)}><ArrowUp size={14} /></button>
+								<button type="button" class="rounded px-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" aria-label="Move {SECTION_LABELS[id]} down" disabled={i===resume.sectionOrder.length-1} onclick={() => moveSection(i,1)}><ArrowDown size={14} /></button>
 								<button
 									type="button"
 									class="rounded-md border px-2.5 py-1 text-[11px] font-medium transition {sectionVisible(id) ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500'}"
@@ -1365,10 +1500,10 @@
 					</div>
 
 					{#if resume.experience.length === 0}
-						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+						<p class="mb-3 text-xs text-slate-500">No entries yet.</p>
 					{:else}
-						<div class="mb-3 space-y-3">
-							{#each resume.experience as item, i (item.id)}
+						<div class="mb-3 space-y-3" use:dndzone={{items: expItems}} onconsider={handleExpConsider} onfinalize={handleExpFinalize}>
+							{#each expItems as item, i (item.id)}
 								<div class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
 									<div class="mb-2.5 flex items-center justify-between gap-2">
 										<span
@@ -1385,7 +1520,7 @@
 												disabled={i === 0}
 												onclick={() => moveItem(resume.experience, item.id, -1)}
 											>
-												↑
+												<ArrowUp size={14} />
 											</button>
 											<button
 												type="button"
@@ -1395,7 +1530,7 @@
 												disabled={i === resume.experience.length - 1}
 												onclick={() => moveItem(resume.experience, item.id, 1)}
 											>
-												↓
+												<ArrowDown size={14} />
 											</button>
 											<button
 												type="button"
@@ -1404,7 +1539,7 @@
 												aria-label="Remove role {i + 1}"
 												onclick={() => removeExperience(item.id)}
 											>
-												✕
+												<X size={14} />
 											</button>
 										</div>
 									</div>
@@ -1490,7 +1625,7 @@
 					</div>
 
 					{#if resume.education.length === 0}
-						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+						<p class="mb-3 text-xs text-slate-500">No entries yet.</p>
 					{:else}
 						<div class="mb-3 space-y-3">
 							{#each resume.education as item, i (item.id)}
@@ -1510,7 +1645,7 @@
 												disabled={i === 0}
 												onclick={() => moveItem(resume.education, item.id, -1)}
 											>
-												↑
+												<ArrowUp size={14} />
 											</button>
 											<button
 												type="button"
@@ -1520,7 +1655,7 @@
 												disabled={i === resume.education.length - 1}
 												onclick={() => moveItem(resume.education, item.id, 1)}
 											>
-												↓
+												<ArrowDown size={14} />
 											</button>
 											<button
 												type="button"
@@ -1529,7 +1664,7 @@
 												aria-label="Remove school {i + 1}"
 												onclick={() => removeEducation(item.id)}
 											>
-												✕
+												<X size={14} />
 											</button>
 										</div>
 									</div>
@@ -1591,7 +1726,7 @@
 					</div>
 
 					{#if resume.projects.length === 0}
-						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+						<p class="mb-3 text-xs text-slate-500">No entries yet.</p>
 					{:else}
 						<div class="mb-3 space-y-3">
 							{#each resume.projects as item, i (item.id)}
@@ -1611,7 +1746,7 @@
 												disabled={i === 0}
 												onclick={() => moveItem(resume.projects, item.id, -1)}
 											>
-												↑
+												<ArrowUp size={14} />
 											</button>
 											<button
 												type="button"
@@ -1621,7 +1756,7 @@
 												disabled={i === resume.projects.length - 1}
 												onclick={() => moveItem(resume.projects, item.id, 1)}
 											>
-												↓
+												<ArrowDown size={14} />
 											</button>
 											<button
 												type="button"
@@ -1630,7 +1765,7 @@
 												aria-label="Remove project {i + 1}"
 												onclick={() => removeProject(item.id)}
 											>
-												✕
+												<X size={14} />
 											</button>
 										</div>
 									</div>
@@ -1694,7 +1829,7 @@
 					</div>
 
 					{#if resume.certifications.length === 0}
-						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+						<p class="mb-3 text-xs text-slate-500">No entries yet.</p>
 					{:else}
 						<div class="mb-3 space-y-3">
 							{#each resume.certifications as item, i (item.id)}
@@ -1714,7 +1849,7 @@
 												disabled={i === 0}
 												onclick={() => moveItem(resume.certifications, item.id, -1)}
 											>
-												↑
+												<ArrowUp size={14} />
 											</button>
 											<button
 												type="button"
@@ -1724,7 +1859,7 @@
 												disabled={i === resume.certifications.length - 1}
 												onclick={() => moveItem(resume.certifications, item.id, 1)}
 											>
-												↓
+												<ArrowDown size={14} />
 											</button>
 											<button
 												type="button"
@@ -1733,7 +1868,7 @@
 												aria-label="Remove certification {i + 1}"
 												onclick={() => removeCertification(item.id)}
 											>
-												✕
+												<X size={14} />
 											</button>
 										</div>
 									</div>
@@ -1793,13 +1928,13 @@
 							{resume.customSections.length === 1 ? 'entry' : 'entries'}
 						</span>
 					</div>
-					<p class="mb-3 text-[11px] leading-4 text-slate-400">
+					<p class="mb-3 text-[11px] leading-4 text-slate-500">
 						Free-form sections for awards, languages, publications — anything else.
 						Line breaks in the body are preserved on the resume.
 					</p>
 
 					{#if resume.customSections.length === 0}
-						<p class="mb-3 text-xs text-slate-400">No entries yet.</p>
+						<p class="mb-3 text-xs text-slate-500">No entries yet.</p>
 					{:else}
 						<div class="mb-3 space-y-3">
 							{#each resume.customSections as item, i (item.id)}
@@ -1819,7 +1954,7 @@
 												disabled={i === 0}
 												onclick={() => moveItem(resume.customSections, item.id, -1)}
 											>
-												↑
+												<ArrowUp size={14} />
 											</button>
 											<button
 												type="button"
@@ -1829,7 +1964,7 @@
 												disabled={i === resume.customSections.length - 1}
 												onclick={() => moveItem(resume.customSections, item.id, 1)}
 											>
-												↓
+												<ArrowDown size={14} />
 											</button>
 											<button
 												type="button"
@@ -1838,7 +1973,7 @@
 												aria-label="Remove custom section {i + 1}"
 												onclick={() => removeCustomSection(item.id)}
 											>
-												✕
+												<X size={14} />
 											</button>
 										</div>
 									</div>
@@ -1924,13 +2059,13 @@
 									aria-label="Remove skill {skill}"
 									onclick={() => removeSkill(i)}
 								>
-									✕
+									<X size={14} />
 								</button>
 							</span>
 						{/each}
 						<input
 							type="text"
-							class="min-w-[140px] flex-1 border-0 bg-transparent px-1 py-1 text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none"
+							class="min-w-[140px] flex-1 border-0 bg-transparent px-1 py-1 text-[13px] text-slate-900 placeholder:text-slate-500 focus:outline-none"
 							placeholder={resume.skills.length === 0
 								? 'Type a skill, press Enter'
 								: 'Add another…'}
@@ -1939,7 +2074,7 @@
 							onblur={commitSkills}
 						/>
 					</div>
-					<p class="mt-2 text-[11px] text-slate-400">
+					<p class="mt-2 text-[11px] text-slate-500">
 						Press Enter or comma to add. Backspace on empty removes the last tag.
 					</p>
 				</section>
@@ -1947,7 +2082,7 @@
 				<!-- Section order & visibility (gap 7) -->
 				<section class={cls.card}>
 					<h2 class={cls.sectionTitle}>Sections</h2>
-					<p class="mb-2.5 text-[11px] leading-4 text-slate-400">
+					<p class="mb-2.5 text-[11px] leading-4 text-slate-500">
 						Reorder how sections appear on the resume, or hide ones you don’t need.
 						Hidden sections keep their data.
 					</p>
@@ -1971,7 +2106,7 @@
 									disabled={i === 0}
 									onclick={() => moveSection(i, -1)}
 								>
-									↑
+									<ArrowUp size={14} />
 								</button>
 								<button
 									type="button"
@@ -1981,7 +2116,7 @@
 									disabled={i === resume.sectionOrder.length - 1}
 									onclick={() => moveSection(i, 1)}
 								>
-									↓
+									<ArrowDown size={14} />
 								</button>
 								<button
 									type="button"
@@ -2064,7 +2199,7 @@
 										</button>
 									{/each}
 								</div>
-								<p class="mt-1.5 text-[10.5px] leading-4 text-slate-400">
+								<p class="mt-1.5 text-[10.5px] leading-4 text-slate-500">
 									Click a keyword to add it to Skills — only if it honestly applies.
 								</p>
 							{:else}
@@ -2074,18 +2209,18 @@
 							{/if}
 						</div>
 					{:else if resume.jobDescription.trim().length > 0}
-						<p class="mt-2 text-[11px] text-slate-400">
+						<p class="mt-2 text-[11px] text-slate-500">
 							Keep pasting — need a few meaningful words to compare.
 						</p>
 					{:else}
-						<p class="mt-2 text-[11px] text-slate-400">
-							Compares the posting against your summary, experience, skills, and more.
-							Client-side only — nothing leaves your browser.
-						</p>
+					<p class="mt-2 text-[11px] text-slate-500">
+						Compares the posting against your summary, experience, skills, and more.
+						Client-side only — nothing leaves your browser.
+					</p>
 					{/if}
 				</section>
 
-				<p class="pb-2 text-center text-[11px] text-slate-400">
+				<p class="pb-2 text-center text-[11px] text-slate-500">
 					Everything stays in your browser — nothing is uploaded.<br />
 					For a clean PDF (Chrome/Edge): uncheck “Headers and footers” under More settings in
 					the print dialog.
@@ -2094,7 +2229,7 @@
 		</aside>
 
 		<!-- Preview -->
-		<section class="preview-pane flex-1 overflow-auto bg-slate-200/80 p-4 sm:p-8 lg:min-h-0">
+		<section class="preview-pane flex-1 overflow-auto bg-slate-200/80 p-4 sm:p-8 lg:min-h-0 dark:bg-slate-950">
 			<!-- Page-count badge (gap 2) -->
 			<div class="no-print mx-auto mb-3 w-fit print:hidden">
 				{#if pageCount > 1}
@@ -2122,6 +2257,7 @@
 					style:--paper-h={PAPER[paper].height}
 					style:--resume-font={FONTS[resume.fontFamily]?.stack ?? FONTS.system.stack}
 					style:--resume-size="{resume.fontSize}px"
+					style:--resume-margin="{margin}mm"
 				style:--accent={accent}
 				style:--lh={density === "compact" ? "1.3" : density === "relaxed" ? "1.6" : "1.45"}
 				>
@@ -2313,8 +2449,11 @@
 	/* Template variants */
 	.resume-page.template-ats .resume-heading { border-bottom: 1px solid #cbd5e1; }
 	.resume-page.template-ats header { border-bottom: 1px solid #000; }
-	.resume-page.template-sidebar { padding: 0; }
-	.resume-page.template-sidebar .resume-page-inner { padding: 14mm; }
+	.resume-page.template-sidebar { border-left: 6px solid var(--accent, #1e293b); }
+	.resume-page.template-sidebar header {
+		background: color-mix(in srgb, var(--accent, #1e293b) 8%, transparent);
+		border-bottom-width: 1px;
+	}
 	.resume-page .resume-heading { color: var(--accent, #1e293b); border-bottom-color: var(--accent, #1e293b); }
 	.resume-page header { border-bottom-color: var(--accent, #1e293b); }
 	.resume-page {
@@ -2322,7 +2461,7 @@
 		width: var(--paper-w, 210mm);
 		min-height: var(--paper-h, 297mm);
 		margin: 0 auto;
-		padding: 14mm;
+		padding: var(--resume-margin, 14mm);
 		background: #ffffff;
 		color: #1e293b;
 		font-family: var(--resume-font, 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
