@@ -1,56 +1,75 @@
-# sv
+# Free Resume Builder
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A free, local-first resume builder that runs entirely in your browser. No accounts, no signup, no server — your data never leaves your device. Build, preview, and export a print-accurate resume in minutes.
 
-## Creating a project
+## Features
 
-If you're seeing this, you've probably already done this step. Congrats!
+- **Live preview** — see every edit reflected instantly on an accurate paper page
+- **3 templates** — Classic, Sidebar, and ATS-safe
+- **Print-to-PDF** — native browser printing (`Ctrl/⌘+P`) with CSS print rules; no server, no PDF libraries
+- **Paper options** — A4 / Letter, margins (Narrow / Normal / Wide), density (Comfortable / Compact)
+- **Styling controls** — web-safe font families, font size (9–18px), accent color, light/dark mode
+- **Sections** — personal info, summary, experience (with roles), education, projects, certifications, skills, and custom sections; reorder, hide, and show what you need
+- **Skills layout** — switch between bullet list and inline chips
+- **Undo / redo** — 200-step history with `Ctrl/⌘+Z` / `Ctrl/⌘+Shift+Z`
+- **Named versions** — save and restore snapshots of your resume from the More menu
+- **Command palette** — `Ctrl/⌘+K` for quick actions
+- **Completeness gauge** — instant feedback on missing key fields
+- **Job-description keyword check** — paste a posting and see matched vs. missing keywords
+- **Import** — JSON (incl. JSON Resume schema) and PDF text
+- **Export** — PDF (via print), DOCX, Markdown, and JSON
+- **Autosave** — everything persists to `localStorage` automatically; works offline
+- **Accessible** — labeled inputs, live regions for notices, keyboard shortcuts, dialog semantics
+
+## Stack
+
+| Layer | Tech |
+| --- | --- |
+| Framework | [Svelte 5](https://svelte.dev) + [SvelteKit 3](https://kit.svelte.dev) |
+| Styling | [Tailwind CSS 4](https://tailwindcss.com) |
+| Language | TypeScript |
+| Build | [Vite 8](https://vite.dev) |
+| Icons | [lucide-svelte](https://lucide.dev) |
+| Drag & drop | [svelte-dnd-action](https://github.com/isaacHagoel/svelte-dnd-action) |
+| DOCX export | [docx](https://docx.js.org) |
+| PDF import | [pdfjs-dist](https://mozilla.github.io/pdf.js) |
+| E2E tests | [Playwright](https://playwright.dev) |
+
+## Getting started
 
 ```sh
-# create a new project
-npx sv create my-app
-```
+# install dependencies
+npm install
 
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@1.2.0 create --template minimal --types ts --install npm .
-```
-
-## Adding features
-
-Add features to your project with `sv add`:
-
-```sh
-npx sv add
-```
-
-For example, to add Tailwind CSS:
-
-```sh
-npx sv add tailwindcss
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+# start dev server
 npm run dev
 
-# or start the server and open the app in a new browser tab
+# or open in browser
 npm run dev -- --open
 ```
 
-## Building
-
-To create a production version of your app:
+## Scripts
 
 ```sh
-npm run build
+npm run dev       # start dev server
+npm run build     # production build
+npm run preview   # preview production build
+npm run check     # svelte-check type checking
+npx playwright test  # run e2e tests (e2e/)
 ```
 
-You can preview the production build with `npm run preview`.
+## Deployment
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+The project uses `@sveltejs/adapter-auto`, so it deploys to any supported platform (Vercel, Netlify, Cloudflare, Node) with zero config — push to `main` and the platform builds automatically.
+
+```sh
+npm run build     # output in .svelte-kit/ + build/
+```
+
+## Privacy
+
+All resume data is stored only in your browser's `localStorage`. There is no backend, no tracking, and no data ever leaves your machine. Clearing site data removes your resume — export JSON to keep a backup.
+
+## License
+
+[MIT](LICENSE)
