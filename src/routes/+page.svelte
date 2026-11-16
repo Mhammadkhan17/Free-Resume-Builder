@@ -21,6 +21,7 @@
 	 * @property {string} website
 	 * @property {string} linkedin
 	 * @property {string} summary
+	 * @property {string} photo
 	 */
 
 	/**
@@ -145,7 +146,7 @@
 
 	/** Keyboard-command palette entries (⌘K). Each runs an existing action. */
 	const commands = [
-		{ key: '⌘P', label: 'Print / Save PDF', desc: 'Open print dialog for a clean PDF', action: printResume },
+		{ key: '⌘P', label: 'Print / Save PDF', desc: 'Open print dialog', action: printResume },
 		{ key: '⌘Z', label: 'Undo', desc: 'Revert the last change', action: undo },
 		{ key: '⌘Y', label: 'Redo', desc: 'Reapply the last undone change', action: redo },
 		{ key: '⌘K', label: 'Close palette', desc: 'Dismiss this menu', action: () => { showPalette = false; } },
@@ -209,7 +210,8 @@
 				phone: '',
 				website: '',
 				linkedin: '',
-				summary: ''
+				summary: '',
+				photo: ''
 			},
 			experience: [],
 			education: [],
@@ -248,7 +250,8 @@
 			phone: asText(p.phone),
 			website: asText(p.website),
 			linkedin: asText(p.linkedin),
-			summary: asText(p.summary)
+			summary: asText(p.summary),
+			photo: asText(p.photo).startsWith('data:image/') ? asText(p.photo) : ''
 		};
 
 		if (Array.isArray(source.experience)) {
@@ -373,7 +376,8 @@
 				website: 'https://ada.dev',
 				linkedin: 'linkedin.com/in/ada',
 				summary:
-					'Software engineer with 8+ years building reliable distributed systems. Comfortable owning services end to end — from design review through on-call — and mentoring engineers to do the same.'
+					'Software engineer with 8+ years building reliable distributed systems. Comfortable owning services end to end — from design review through on-call — and mentoring engineers to do the same.',
+				photo: ''
 			},
 			experience: [
 				{
@@ -464,12 +468,14 @@
 	let resume = $state(defaultResume());
 	/** @type {PaperSize} */
 	let paper = $state('a4');
-	/** @type {'classic' | 'sidebar' | 'ats'} */
+	/** @type {'classic' | 'sidebar' | 'modern' | 'minimal' | 'elegant' | 'bold' | 'mono' | 'photo' | 'executive' | 'ats'} */
 	let template = $state('classic');
 	let accent = $state('#1e293b');
 	let margin = $state('14');
 	let density = $state('normal');
 	let darkMode = $state(false);
+	/** @type {'circle' | 'square'} */
+	let photoShape = $state('circle');
 	let expItems = $state(/** @type {any[]} */ ([]));
 	$effect(() => { expItems = [...resume.experience]; });
 	let skillDraft = $state('');
@@ -549,7 +555,7 @@
 	let settingsHydrated = $state(false);
 	$effect(() => {
 		if (typeof localStorage === 'undefined' || !settingsHydrated) return;
-		try { localStorage.setItem('resume-builder:template', template); localStorage.setItem('resume-builder:accent', accent); localStorage.setItem('resume-builder:margin', margin); localStorage.setItem('resume-builder:density', density); localStorage.setItem('resume-builder:dark', darkMode ? '1' : '0'); } catch {}
+		try { localStorage.setItem('resume-builder:template', template); localStorage.setItem('resume-builder:accent', accent); localStorage.setItem('resume-builder:margin', margin); localStorage.setItem('resume-builder:density', density); localStorage.setItem('resume-builder:dark', darkMode ? '1' : '0'); localStorage.setItem('resume-builder:photoShape', photoShape); } catch {}
 	});
 
 	$effect(() => {
@@ -564,8 +570,9 @@
 		try { const m = localStorage.getItem('resume-builder:margin'); if (m) margin = m; } catch {}
 		try { const d = localStorage.getItem('resume-builder:density'); if (d) density = d; } catch {}
 		try { const dm = localStorage.getItem('resume-builder:dark'); if (dm) darkMode = dm === '1'; } catch {}
+		try { const ps = localStorage.getItem('resume-builder:photoShape'); if (ps === 'circle' || ps === 'square') photoShape = ps; } catch {}
 		const t = localStorage.getItem('resume-builder:template');
-		if (t === 'classic' || t === 'sidebar' || t === 'ats') template = t;
+		if (t === 'classic' || t === 'sidebar' || t === 'modern' || t === 'minimal' || t === 'elegant' || t === 'bold' || t === 'mono' || t === 'photo' || t === 'executive' || t === 'ats') template = t;
 		settingsHydrated = true;
 	});
 
@@ -580,6 +587,12 @@
 			.map((v) => asText(v).trim())
 			.filter(Boolean)
 	);
+
+	// Photo shows only in the Photo template and only when one is set.
+	function templateShowsPhoto(/** @type {string} */ t) {
+		return t === 'photo';
+	}
+	const showPhoto = $derived(templateShowsPhoto(template) && !!resume.personal.photo);
 
 	// ── Page-count / overflow detection ──────────────────────────────────
 	// Measures rendered height against one physical page so users learn about
@@ -950,7 +963,8 @@
 						phone: data.basics.phone || '',
 						website: data.basics.url || '',
 						linkedin: (data.basics.profiles || []).find((/** @type {any} */ p) => /linkedin/i.test(p.network))?.url || '',
-						summary: data.basics.summary || ''
+						summary: data.basics.summary || '',
+						photo: ''
 					},
 					experience: (data.work || []).map((/** @type {any} */ w) => ({
 						id: uid('exp'),
@@ -1113,16 +1127,49 @@
 	function handleExpConsider(/** @type {any} */ e) { expItems = e.detail.items; }
 	function handleExpFinalize(/** @type {any} */ e) { expItems = e.detail.items; resume.experience = expItems; }
 
-	function printResume() {
-		const onAfterPrint = () => {
-			window.removeEventListener('afterprint', onAfterPrint);
-			flash(
-				'Clean PDF: in the print dialog open “More settings” and uncheck “Headers and footers” (Chrome remembers).',
-				'ok',
-				7000
-			);
+	// Center-crop to a square and downscale so localStorage stays small (~30-50 KB).
+	function handlePhoto(/** @type {Event} */ e) {
+		const input = /** @type {HTMLInputElement} */ (e.currentTarget);
+		const file = input.files?.[0];
+		if (!file) return;
+		if (!file.type.startsWith('image/')) {
+			flash('Choose an image file (PNG or JPG).', 'bad');
+			input.value = '';
+			return;
+		}
+		const url = URL.createObjectURL(file);
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(url);
+			const side = Math.min(img.naturalWidth, img.naturalHeight);
+			const size = Math.max(1, Math.min(400, side));
+			const c = document.createElement('canvas');
+			c.width = size;
+			c.height = size;
+			const ctx = c.getContext('2d');
+			if (!ctx) return;
+			ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+			try {
+				resume.personal.photo = c.toDataURL('image/jpeg', 0.85);
+				flash('Photo added — it never leaves your browser.');
+			} catch {
+				flash('Could not process that image.', 'bad');
+			}
 		};
-		window.addEventListener('afterprint', onAfterPrint);
+		img.onerror = () => {
+			URL.revokeObjectURL(url);
+			flash('Could not read that image.', 'bad');
+		};
+		img.src = url;
+		input.value = '';
+	}
+
+	function removePhoto() {
+		resume.personal.photo = '';
+		flash('Photo removed.');
+	}
+
+	function printResume() {
 		window.print();
 	}
 </script>
@@ -1167,6 +1214,13 @@
 				>
 					<option value="classic">Classic</option>
 					<option value="sidebar">Sidebar</option>
+					<option value="modern">Modern</option>
+					<option value="minimal">Minimal</option>
+					<option value="elegant">Elegant</option>
+					<option value="bold">Bold</option>
+					<option value="mono">Mono</option>
+					<option value="photo">Photo</option>
+					<option value="executive">Executive</option>
 					<option value="ats">ATS-safe</option>
 				</select>
 				<div
@@ -1294,7 +1348,6 @@
 				type="button"
 				class={cls.btnPrimary}
 				onclick={printResume}
-				title="For a clean PDF: uncheck “Headers and footers” under More settings in the print dialog"
 			>
 				Print / Save PDF
 			</button>
@@ -1453,6 +1506,54 @@
 								placeholder="linkedin.com/in/ada"
 								bind:value={resume.personal.linkedin}
 							/>
+						</div>
+						<div>
+							<label class={cls.label} for="f-photo">Photo</label>
+							<div class="flex flex-wrap items-center gap-2">
+								<label
+									class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 focus-within:ring-2 focus-within:ring-blue-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+								>
+									{resume.personal.photo ? 'Replace photo' : 'Choose image'}
+									<input
+										id="f-photo"
+										type="file"
+										accept="image/*"
+										class="sr-only"
+										onchange={handlePhoto}
+									/>
+								</label>
+								{#if resume.personal.photo}
+									<button type="button" class={cls.btnGhost} onclick={removePhoto}>Remove</button>
+								{/if}
+								<div class="flex items-center gap-1" role="group" aria-label="Photo shape">
+									<button
+										type="button"
+										class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {photoShape ===
+										'circle'
+											? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+											: 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}"
+										aria-pressed={photoShape === 'circle'}
+										onclick={() => (photoShape = 'circle')}
+									>
+										Circle
+									</button>
+									<button
+										type="button"
+										class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition {photoShape ===
+										'square'
+											? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+											: 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}"
+										aria-pressed={photoShape === 'square'}
+										onclick={() => (photoShape = 'square')}
+									>
+										Square
+									</button>
+								</div>
+							</div>
+							<p class="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+								Click “Add photo” in the preview, or choose a file here. Shown only in the Photo
+								template; stored in your browser.
+							</p>
 						</div>
 						<div>
 							<label class={cls.label} for="f-summary">Summary</label>
@@ -2221,9 +2322,7 @@
 				</section>
 
 				<p class="pb-2 text-center text-[11px] text-slate-500">
-					Everything stays in your browser — nothing is uploaded.<br />
-					For a clean PDF (Chrome/Edge): uncheck “Headers and footers” under More settings in
-					the print dialog.
+					Everything stays in your browser — nothing is uploaded.
 				</p>
 			</div>
 		</aside>
@@ -2262,27 +2361,34 @@
 				style:--lh={density === "compact" ? "1.3" : density === "relaxed" ? "1.6" : "1.45"}
 				>
 					<!-- Header -->
-					<header class="border-b-2 border-slate-800 pb-3">
-						<h1 class="resume-name">{resume.personal.name.trim() || 'Your Name'}</h1>
-						{#if resume.personal.headline.trim()}
-							<p
-								class="mt-1 text-center text-[0.958em] font-semibold uppercase tracking-[0.12em] text-slate-600"
-							>
-								{resume.personal.headline}
-							</p>
+					<header class="border-b-2 border-slate-800 pb-3" class:photo-layout={templateShowsPhoto(template)}>
+						{#if showPhoto}
+							<img class="resume-photo photo-{photoShape}" src={resume.personal.photo} alt="" />
+						{:else if templateShowsPhoto(template)}
+							<label class="photo-placeholder photo-{photoShape}" for="f-photo">Add photo</label>
 						{/if}
-						{#if contacts.length}
-							<p
-								class="mt-1.5 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-center text-[0.875em] leading-[1.35] text-slate-600"
-							>
-								{#each contacts as contact, i (i)}
-									{#if i > 0}
-										<span aria-hidden="true" class="text-slate-400">•</span>
-									{/if}
-									<span class="break-words">{contact}</span>
-								{/each}
-							</p>
-						{/if}
+						<div class="photo-meta">
+							<h1 class="resume-name">{resume.personal.name.trim() || 'Your Name'}</h1>
+							{#if resume.personal.headline.trim()}
+								<p
+									class="mt-1 text-center text-[0.958em] font-semibold uppercase tracking-[0.12em] text-slate-600"
+								>
+									{resume.personal.headline}
+								</p>
+							{/if}
+							{#if contacts.length}
+								<p
+									class="mt-1.5 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-center text-[0.875em] leading-[1.35] text-slate-600"
+								>
+									{#each contacts as contact, i (i)}
+										{#if i > 0}
+											<span aria-hidden="true" class="text-slate-400">•</span>
+										{/if}
+										<span class="break-words">{contact}</span>
+									{/each}
+								</p>
+							{/if}
+						</div>
 					</header>
 
 					<!-- Body sections in user-defined order (gaps 6 + 7) -->
@@ -2447,12 +2553,166 @@
 	/* ── Screen: document chrome ─────────────────────────────────────── */
 
 	/* Template variants */
-	.resume-page.template-ats .resume-heading { border-bottom: 1px solid #cbd5e1; }
+	.resume-page.template-ats .resume-heading { border-bottom: 1px solid #cbd5e1; color: #0f172a; }
 	.resume-page.template-ats header { border-bottom: 1px solid #000; }
 	.resume-page.template-sidebar { border-left: 6px solid var(--accent, #1e293b); }
 	.resume-page.template-sidebar header {
 		background: color-mix(in srgb, var(--accent, #1e293b) 8%, transparent);
 		border-bottom-width: 1px;
+	}
+	.resume-page.template-modern header {
+		text-align: left;
+		border-bottom: 3px solid var(--accent, #1e293b);
+	}
+	.resume-page.template-modern .resume-name {
+		text-align: left;
+		text-transform: none;
+		letter-spacing: 0.01em;
+		font-size: 2.3em;
+		color: var(--accent, #1e293b);
+	}
+	.resume-page.template-modern header p {
+		text-align: left;
+		justify-content: flex-start;
+		color: #475569;
+	}
+	.resume-page.template-modern .resume-heading {
+		border-bottom: none;
+		border-left: 3px solid var(--accent, #1e293b);
+		margin-left: -11px;
+		padding-left: 8px;
+		padding-bottom: 0;
+		color: var(--accent, #1e293b);
+	}
+	.resume-page.template-minimal header { border-bottom: 1px solid #e2e8f0; }
+	.resume-page.template-minimal .resume-name {
+		text-transform: none;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		font-size: 1.9em;
+		color: #0f172a;
+	}
+	.resume-page.template-minimal .resume-heading {
+		border-bottom: none;
+		padding-bottom: 0;
+		font-size: 0.8em;
+		font-weight: 600;
+		letter-spacing: 0.14em;
+		color: #475569;
+	}
+	.resume-page.template-elegant header { border-bottom: 1px solid #94a3b8; }
+	.resume-page.template-elegant .resume-name {
+		font-family: Georgia, 'Times New Roman', Times, serif;
+		text-transform: none;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		font-size: 2.2em;
+		color: #0f172a;
+	}
+	.resume-page.template-elegant .resume-heading {
+		font-family: Georgia, 'Times New Roman', Times, serif;
+		text-transform: none;
+		font-weight: 600;
+		font-size: 1.05em;
+		letter-spacing: 0.06em;
+		border-bottom: 1px solid #cbd5e1;
+		color: var(--accent, #1e293b);
+	}
+	.resume-page.template-bold header { border-bottom: 4px solid var(--accent, #1e293b); }
+	.resume-page.template-bold .resume-name {
+		font-weight: 800;
+		letter-spacing: 0.02em;
+		font-size: 2.4em;
+		color: #0f172a;
+	}
+	.resume-page.template-bold .resume-heading {
+		font-weight: 800;
+		font-size: 1.02em;
+		letter-spacing: 0.1em;
+		border-bottom: 3px solid var(--accent, #1e293b);
+		color: #0f172a;
+	}
+	.resume-page.template-mono header {
+		text-align: left;
+		border-bottom: 1px dashed #94a3b8;
+	}
+	.resume-page.template-mono .resume-name {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+		text-transform: none;
+		letter-spacing: -0.02em;
+		font-size: 1.9em;
+		color: #0f172a;
+		text-align: left;
+	}
+	.resume-page.template-mono header p {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+		text-align: left;
+		justify-content: flex-start;
+	}
+	.resume-page.template-mono .resume-heading {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+		border-bottom: none;
+		padding-bottom: 0;
+		font-size: 0.85em;
+		letter-spacing: 0.05em;
+		color: #0f172a;
+	}
+	.resume-page.template-mono .resume-heading::before {
+		content: '# ';
+		color: var(--accent, #1e293b);
+	}
+	.resume-page.template-photo header.photo-layout {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		text-align: left;
+		border-bottom: 3px solid var(--accent, #1e293b);
+	}
+	.resume-page.template-photo .resume-photo {
+		width: 96px;
+		height: 96px;
+		flex-shrink: 0;
+		object-fit: cover;
+		border: 3px solid var(--accent, #1e293b);
+	}
+	.resume-page.template-photo .resume-photo.photo-circle { border-radius: 50%; }
+	.resume-page.template-photo .resume-photo.photo-square { border-radius: 0; }
+	.resume-page.template-photo .photo-placeholder {
+		width: 96px;
+		height: 96px;
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 2px dashed var(--accent, #1e293b);
+		color: #64748b;
+		font-size: 11px;
+		font-weight: 600;
+		line-height: 1.25;
+		text-align: center;
+		cursor: pointer;
+		user-select: none;
+	}
+	.resume-page.template-photo .photo-placeholder.photo-circle { border-radius: 50%; }
+	.resume-page.template-photo .photo-placeholder.photo-square { border-radius: 0; }
+	.resume-page.template-photo header.photo-layout .resume-name {
+		text-align: left;
+		text-transform: none;
+		letter-spacing: 0.01em;
+		color: #0f172a;
+	}
+	.resume-page.template-photo header.photo-layout p {
+		text-align: left;
+		justify-content: flex-start;
+	}
+	.resume-page.template-executive header { border-bottom: 3px double #0f172a; }
+	.resume-page.template-executive .resume-name {
+		letter-spacing: 0.14em;
+		color: #0f172a;
+	}
+	.resume-page.template-executive .resume-heading {
+		border-bottom: 2px solid #0f172a;
+		color: #0f172a;
 	}
 	.resume-page .resume-heading { color: var(--accent, #1e293b); border-bottom-color: var(--accent, #1e293b); }
 	.resume-page header { border-bottom-color: var(--accent, #1e293b); }
@@ -2547,6 +2807,10 @@
 		}
 
 		.no-print {
+			display: none !important;
+		}
+
+		.photo-placeholder {
 			display: none !important;
 		}
 

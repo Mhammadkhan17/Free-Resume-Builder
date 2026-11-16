@@ -25,8 +25,8 @@ A single-page web app opened in a browser. State lives in memory and mirrors to 
 ## Capabilities and Constraints
 
 Confirmed capability:
-- Resume schema: personal info (name, headline, location, email, phone, website, LinkedIn, summary), experience, education, projects, certifications, custom sections, skills, plus job description, font family, font size (9–18px), section order, hidden sections.
-- Three templates: classic, sidebar, ATS-safe.
+- Resume schema: personal info (name, headline, location, email, phone, website, LinkedIn, summary, photo), experience, education, projects, certifications, custom sections, skills, plus job description, font family, font size (9–18px), section order, hidden sections.
+- Ten templates: classic, sidebar, modern, minimal, elegant, bold, mono, photo, executive, ATS-safe. The photo template shows an optional headshot (circle or square, client-side center-crop, data URL in resume state).
 - Completeness gauge (name, contact, summary, experience, education, skills).
 - Job-description keyword gap report (matched vs missing keywords).
 - Undo/redo history (200 steps), named versions, example resume, reset.

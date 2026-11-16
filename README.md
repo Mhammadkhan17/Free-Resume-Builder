@@ -5,7 +5,8 @@ A free, local-first resume builder that runs entirely in your browser. No accoun
 ## Features
 
 - **Live preview** — see every edit reflected instantly on an accurate paper page
-- **3 templates** — Classic, Sidebar, and ATS-safe
+- **10 templates** — Classic, Sidebar, Modern, Minimal, Elegant, Bold, Mono, Photo, Executive, and ATS-safe
+- **Photo (headshot) template** — upload a photo, choose circle or square; center-cropped and downscaled in your browser, never uploaded
 - **Print-to-PDF** — native browser printing (`Ctrl/⌘+P`) with CSS print rules; no server, no PDF libraries
 - **Paper options** — A4 / Letter, margins (Narrow / Normal / Wide), density (Comfortable / Compact)
 - **Styling controls** — web-safe font families, font size (9–18px), accent color, light/dark mode
