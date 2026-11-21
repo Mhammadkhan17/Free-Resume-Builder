@@ -2,7 +2,19 @@
 	import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 	import { dndzone } from 'svelte-dnd-action';
 	import * as pdfjsLib from 'pdfjs-dist';
-	import { ArrowUp, ArrowDown, X } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, X, WandSparkles } from 'lucide-svelte';
+	import { keywords } from '#lib/keywords';
+	import { tailor } from '#lib/stores/tailor.svelte';
+	import { runTailorLoop } from '#lib/ai/openrouter';
+	import {
+		TOOLS,
+		SYSTEM_PROMPT,
+		resumeProjection,
+		buildUserMessage,
+		createApplyTool,
+		composeChangeLog,
+	} from '#lib/ai/resumeTools';
+	import TailorPanel from '#lib/components/tailor/TailorPanel.svelte';
 	pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 	/**
 	 * Local-first Resume Builder
@@ -521,7 +533,7 @@
 			} catch {}
 			return;
 		}
-		if (!isUndoing) {
+		if (!isUndoing && !tailor.isTailoring) {
 			const snap = JSON.stringify(resume);
 			if (history[historyIndex] !== snap) {
 				const next = history.slice(0, historyIndex + 1);
@@ -637,29 +649,7 @@
 	});
 
 	// ── Job-description keyword check (gap 8) ────────────────────────────
-	const STOPWORDS = new Set([
-		'the','and','for','are','but','not','you','all','any','can','has','had','his','her',
-		'its','our','out','who','get','how','why','when','what','where','will','would','could',
-		'should','may','might','this','that','these','those','with','from','into','than','then',
-		'they','them','their','been','were','also','more','most','such','only','other','some',
-		'able','using','used','use','well','like','just','over','under','about','after','before',
-		'between','during','through','above','below','each','every','both','few','many','much',
-		'per','via','etc','include','includes','including','required','require','requirements',
-		'preferred','plus','across','within','without','youll','weve','youre','looking','join',
-		'work','working','works','role','roles','job','jobs','position','candidate','team',
-		'company','experience','years','year','strong','good','new','great','help','ensure'
-	]);
-
-	/** @param {string} text @returns {Set<string>} */
-	function keywords(text) {
-		return new Set(
-			asText(text)
-				.toLowerCase()
-				.split(/[^a-z0-9+#.]+/)
-				.map((w) => w.replace(/^[.+#]+|[.+#]+$/g, ''))
-				.filter((w) => w.length >= 3 && !STOPWORDS.has(w))
-		);
-	}
+	// keywords() + STOPWORDS live in #lib/keywords (shared with AI Tailor).
 
 	const keywordReport = $derived.by(() => {
 		const jd = keywords(resume.jobDescription);
@@ -1049,12 +1039,79 @@
 	}
 
 	function handleKeydown(/** @type {KeyboardEvent} */ event) {
+		if (event.key === 'Escape') {
+			if (showPalette) {
+				event.preventDefault();
+				showPalette = false;
+				return; // palette wins over tailor
+			}
+			if (tailor.panelOpen) {
+				event.preventDefault();
+				closeTailorPanel();
+				return;
+			}
+		}
 		const mod = event.metaKey || event.ctrlKey;
 		if (!mod) return;
 		if (event.key === 'z' && !event.shiftKey) { event.preventDefault(); undo(); }
 		else if ((event.key === 'z' && event.shiftKey) || event.key === 'y') { event.preventDefault(); redo(); }
 		else if (event.key === 'p') { event.preventDefault(); printResume(); }
 		else if (event.key === 'k') { event.preventDefault(); showPalette = !showPalette; }
+	}
+
+	function pushHistorySnapshot() {
+		const snap = JSON.stringify(resume);
+		if (history[historyIndex] === snap) return;
+		const next = history.slice(0, historyIndex + 1);
+		next.push(snap);
+		if (next.length > 200) next.shift();
+		history = next;
+		historyIndex = next.length - 1;
+	}
+
+	/** @type {HTMLButtonElement | null} */
+	let tailorButtonEl = $state(null);
+
+	function closeTailorPanel() {
+		tailor.panelOpen = false;
+		tailorButtonEl?.focus();
+	}
+
+	async function handleTailor() {
+		if (tailor.isTailoring) return;
+		tailor.tailorError = '';
+		tailor.changeLog = [];
+		const pre = JSON.stringify(resume);
+
+		tailor.isTailoring = true;
+		try {
+			const result = await runTailorLoop({
+				apiKey: tailor.apiKey,
+				model: tailor.model,
+				system: SYSTEM_PROMPT,
+				user: buildUserMessage(
+					resumeProjection(resume),
+					resume.jobDescription,
+					tailor.masterBank,
+				),
+				tools: TOOLS,
+				applyTool: createApplyTool(resume, (line) => {
+					tailor.changeLog.push(line);
+				}),
+			});
+			tailor.changeLog = composeChangeLog(tailor.changeLog, result);
+			pushHistorySnapshot();
+		} catch (err) {
+			try {
+				resume = normalize(JSON.parse(pre));
+			} catch {
+				/* keep whatever we have */
+			}
+			tailor.tailorError = err instanceof Error ? err.message : String(err);
+			tailor.changeLog = [];
+		} finally {
+			tailor.isTailoring = false;
+		}
 	}
 
 	function saveVersion() {
@@ -1314,6 +1371,15 @@
 			<div class="flex items-center gap-2">
 				<button type="button" class={cls.btnSecondary} onclick={undo} disabled={historyIndex <= 0}>Undo</button>
 				<button type="button" class={cls.btnSecondary} onclick={redo} disabled={historyIndex >= history.length - 1}>Redo</button>
+				<button
+					type="button"
+					class={cls.btnSecondary}
+					aria-label="Open AI Tailor"
+					bind:this={tailorButtonEl}
+					onclick={() => (tailor.panelOpen = true)}
+				>
+					<WandSparkles size={14} /> Tailor
+				</button>
 				<button type="button" class={cls.btnGhost} onclick={() => (showPalette = true)}>⌘K</button>
 				<button type="button" class={cls.btnGhost} onclick={() => (darkMode = !darkMode)}>{darkMode ? "Light" : "Dark"}</button>
 			</div>
@@ -1380,6 +1446,13 @@
 			</div>
 		</div>
 	{/if}
+
+	<TailorPanel
+		{resume}
+		jobDescription={resume.jobDescription}
+		onTailor={handleTailor}
+		close={closeTailorPanel}
+	/>
 
 	<!-- ── Split pane ──────────────────────────────────────────────────── -->
 	<div class="main-shell flex flex-1 flex-col lg:min-h-0 lg:flex-row">

@@ -17,6 +17,7 @@ A free, local-first resume builder that runs entirely in your browser. No accoun
 - **Command palette** — `Ctrl/⌘+K` for quick actions
 - **Completeness gauge** — instant feedback on missing key fields
 - **Job-description keyword check** — paste a posting and see matched vs. missing keywords
+- **AI Tailor** — optional OpenRouter-powered rewrite of summary, skills, and experience bullets to a job description; runs in a side panel with live keyword highlights and a change log; one-click undo restores the pre-run resume
 - **Import** — JSON (incl. JSON Resume schema) and PDF text
 - **Export** — PDF (via print), DOCX, Markdown, and JSON
 - **Autosave** — everything persists to `localStorage` automatically; works offline
@@ -69,7 +70,7 @@ npm run build     # output in .svelte-kit/ + build/
 
 ## Privacy
 
-All resume data is stored only in your browser's `localStorage`. There is no backend, no tracking, and no data ever leaves your machine. Clearing site data removes your resume — export JSON to keep a backup.
+All resume data is stored only in your browser's `localStorage`. There is no backend, no tracking, and no data ever leaves your machine — except the optional **AI Tailor** feature, which sends your resume text and job description to OpenRouter (the model provider) only when you press **Tailor Resume**. Your API key stays in the browser. Clearing site data removes your resume — export JSON to keep a backup.
 
 ## License
 

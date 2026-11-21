@@ -29,12 +29,13 @@ Confirmed capability:
 - Ten templates: classic, sidebar, modern, minimal, elegant, bold, mono, photo, executive, ATS-safe. The photo template shows an optional headshot (circle or square, client-side center-crop, data URL in resume state).
 - Completeness gauge (name, contact, summary, experience, education, skills).
 - Job-description keyword gap report (matched vs missing keywords).
+- AI Tailor (optional): OpenRouter tool-calling to rewrite summary, skills, and experience bullets against a pasted job description; side panel with keyword highlights, change log, and undo back to the pre-run state. Only runs when the user supplies an API key and presses Tailor Resume; photo data is never sent.
 - Undo/redo history (200 steps), named versions, example resume, reset.
 - Export: PDF (print), DOCX, Markdown, JSON. Import: JSON (incl. JSON Resume mapping), PDF text into a custom section.
 - LocalStorage persistence keyed `resume-builder:v1`; templates/accent/margin/density/dark stored under `resume-builder:*`.
 
 Confirmed constraint:
-- Client-side only: no backend, no auth, no accounts, no server-side storage.
+- Client-side only: no backend, no auth, no accounts, no server-side storage. AI Tailor is opt-in via the user's own OpenRouter API key and is the sole exception to "data never leaves the browser" (only when invoked).
 - Single route (`src/routes/+page.svelte`); the whole builder is one Svelte 5 component.
 - Web-safe / system font stacks only — no external font downloads (local-first).
 - Paper sizes limited to A4 and Letter.
@@ -56,7 +57,7 @@ None yet. Product name, logo, and identity are undecided; no invented name, pers
 
 ## Product Principles
 
-1. Local-first: user data never leaves the browser; no accounts, no server-side storage, no signup.
+1. Local-first: user data never leaves the browser by default; no accounts, no server-side storage, no signup. Optional AI Tailor sends resume text to OpenRouter only when the user explicitly runs it with their own key.
 2. Free for everyone: no paywalls, tiers, or signup, for technical and non-technical users, senior and fresher alike.
 3. Print-accurate output: the preview prints to PDF natively via CSS @media print, with user-controlled paper, margins, and density.
 4. Open data: import/export (JSON Resume, JSON, Markdown, DOCX) so users always own and can move their resume.
